@@ -1,53 +1,28 @@
-use crate::PULSE_GRAPH;
+use crate::{PulseRenderTarget, PULSE_GRAPH};
 use bevy::{
     asset::load_internal_asset,
     prelude::*,
     render::{
         camera::{CameraRenderGraph, ExtractedCamera},
         extract_component::ExtractComponent,
-        render_resource::{SpecializedComputePipelines, SpecializedRenderPipelines},
-        view::{ViewTarget, ViewUniformOffset},
+        render_resource::*,
+        renderer::RenderDevice,
+        texture::TextureCache,
+        view::ViewUniforms,
         Render, RenderApp, RenderSet,
     },
-    utils::Uuid,
 };
-use resources::PulsePathTracerPipeline;
-
-use resources::*;
-
-pub struct PulsePathTracerPlugin;
 
 pub mod node;
-pub mod resources;
+pub use node::*;
 
-pub const FULLSCREEN_TRIANGLE_VERTICES: &[f32] = &[0.0, 0.0, 10.0, 0.0, 10.0, 10.0];
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct Vertex {
-    position: [f32; 3],
-    color: [f32; 3],
-}
-
-pub const VERTICES: &[Vertex] = &[
-    Vertex {
-        position: [0.0, 0.5, 0.0],
-        color: [1.0, 0.0, 0.0],
-    },
-    Vertex {
-        position: [-0.5, -0.5, 0.0],
-        color: [0.0, 1.0, 0.0],
-    },
-    Vertex {
-        position: [0.5, -0.5, 0.0],
-        color: [0.0, 0.0, 1.0],
-    },
-];
-
-const INDICES: &[u16] = &[0, 1, 2];
+pub mod pipeline;
+pub use pipeline::*;
 
 pub const PULSE_PATH_TRACER_SHADER_HANDLE: Handle<Shader> =
     Handle::weak_from_u128(187737725855836603431472235363477954946);
+
+pub struct PulsePathTracerPlugin;
 
 impl Plugin for PulsePathTracerPlugin {
     fn build(&self, app: &mut App) {
@@ -64,10 +39,11 @@ impl Plugin for PulsePathTracerPlugin {
         render_app
             .init_resource::<PulsePathTracerPipeline>()
             .init_resource::<SpecializedComputePipelines<PulsePathTracerPipeline>>()
-            .init_resource::<SpecializedRenderPipelines<PulsePathTracerPipeline>>()
             .add_systems(
                 Render,
-                (prepare_pipelines, prepare_output_textures).in_set(RenderSet::Prepare),
+                (prepare_pipelines, prepare_render_targets)
+                    .in_set(RenderSet::Prepare)
+                    .before(crate::upscaling::prepare_upscaling_pipelines),
             );
     }
 }
@@ -96,6 +72,27 @@ impl Default for PulsePathTracerCameraBundle {
             projection: Default::default(),
             transform: Default::default(),
             global_transform: Default::default(),
+        }
+    }
+}
+
+pub fn prepare_render_targets(
+    views: Query<(Entity, &ExtractedCamera)>,
+    device: Res<RenderDevice>,
+    mut texture_cache: ResMut<TextureCache>,
+    mut commands: Commands,
+) {
+    for (entity, camera) in &views {
+        if let Some(target_size) = camera.physical_target_size {
+            let render_target = PulseRenderTarget::new(
+                target_size.x,
+                target_size.y,
+                None,
+                &mut texture_cache,
+                &device,
+            );
+
+            commands.entity(entity).insert(render_target);
         }
     }
 }
