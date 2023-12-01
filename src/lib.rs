@@ -12,10 +12,12 @@ use bevy::{
 };
 
 pub mod path_tracer;
+pub mod scene;
 pub mod upscaling;
 pub mod utilities;
 
 use path_tracer::*;
+use scene::*;
 use upscaling::*;
 use utilities::*;
 
@@ -25,25 +27,11 @@ pub struct PulsePlugin;
 
 impl Plugin for PulsePlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(
-            app,
-            PULSE_UPSCALING_SHADER_HANDLE,
-            "upscaling/upscaling.wgsl",
-            Shader::from_wgsl
-        );
+        app.add_plugins((PulseUpscalingPlugin, PulseScenePlugin));
     }
 
     fn finish(&self, app: &mut App) {
         let render_app = app.sub_app_mut(RenderApp);
-
-        render_app
-            .init_resource::<PulseUpscalingPipeline>()
-            .init_resource::<SpecializedRenderPipelines<PulseUpscalingPipeline>>();
-
-        render_app.add_systems(
-            Render,
-            prepare_upscaling_pipelines.in_set(RenderSet::Prepare),
-        );
 
         render_app
             .add_render_sub_graph(PULSE_GRAPH)

@@ -67,7 +67,10 @@ impl Default for PulsePathTracerCameraBundle {
     fn default() -> Self {
         Self {
             path_tracer: PulsePathTracer { test_value: 10.0 },
-            camera: Default::default(),
+            camera: Camera {
+                hdr: true,
+                ..default()
+            },
             camera_render_graph: CameraRenderGraph::new(PULSE_GRAPH),
             projection: Default::default(),
             transform: Default::default(),
