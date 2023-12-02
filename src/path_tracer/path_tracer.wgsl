@@ -55,8 +55,8 @@ fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
     ray.record = HitRecord(t_far, vec3<f32>(0.0, 0.0, 0.0));
 
     var color_out: vec4<f32>;
-    let light_position = vec3<f32>(2.0, 5.0, 0.0);
-    let light_strength = 10.0;
+    let light_position = vec3<f32>(2.0, 5.0, 1.0);
+    let light_strength = 15.0;
     trace_ray(&ray);
     if ray.record.t < 0.1 || ray.record.t >= t_far  {
         // Miss
@@ -100,33 +100,87 @@ fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
 }
 
 fn trace_ray(ray: ptr<function, Ray>)  {
-    for (var i = 0; i < 1536; i += 1) {
-        ray_triangle_intersect(ray, triangles[i]);
+    ray_bvh_intersect(ray);
+    // for (var i: u32 = 0u; i < nodes[0].primitive_count; i += 1u) {
+    //     let tri_idx = triangle_indices[nodes[0].first_primitive + i];
+    //     ray_triangle_intersect(ray, triangles[tri_idx]);
+    // }
+}
+
+fn ray_bvh_intersect(ray: ptr<function, Ray>) {
+    var node = 0u;
+    var stack: array<u32, 64>;
+    var stack_ptr = 0;
+    var iteration = 0;
+    let max_iterations = 1000;
+    while iteration < max_iterations {
+        iteration += 1;
+        if nodes[node].primitive_count > 0u {
+            for (var i: u32 = 0u; i < nodes[node].primitive_count; i += 1u) {
+                let tri_idx = triangle_indices[nodes[node].first_primitive + i];
+                ray_triangle_intersect(ray, triangles[tri_idx]);
+            }
+            if stack_ptr == 0 {
+                break;
+            } else {
+                stack_ptr -= 1;
+                node = stack[stack_ptr];
+            }
+            continue;
+        }
+
+        var child_a_idx = nodes[node].child_a_idx;
+        var child_b_idx = child_a_idx + 1u;
+        var dist_a = ray_aabb_intersect(ray, nodes[child_a_idx].aabb_min, nodes[child_a_idx].aabb_max);
+        var dist_b = ray_aabb_intersect(ray, nodes[child_b_idx].aabb_min, nodes[child_b_idx].aabb_max);
+        if dist_a > dist_b {
+            let d = dist_a;
+            dist_a = dist_b;
+            dist_b = d;
+            let c = child_a_idx;
+            child_a_idx = child_b_idx;
+            child_b_idx = c;
+        }
+        if dist_a == 1e30f {
+            if stack_ptr == 0 {
+                break;
+            } else  {
+                stack_ptr -= 1;
+                node = stack[stack_ptr];
+            }
+        } else {
+            node = child_a_idx;
+            if dist_b != 1e30f {
+                stack[stack_ptr] = child_b_idx;
+                stack_ptr += 1;
+            }
+        }
+                
     }
 }
 
-fn ray_bvh_intersect(ray_origin: vec3<f32>, ray_dir: vec3<f32>, ray_t: ptr<function, f32>) {
-    
+fn ray_aabb_intersect(ray: ptr<function, Ray>, aabb_min: vec3<f32>, aabb_max: vec3<f32>) -> f32 {
+    let t_x_1 = (aabb_min.x - (*ray).origin.x) / (*ray).dir.x;
+    let t_x_2 = (aabb_max.x - (*ray).origin.x) / (*ray).dir.x;
+    var t_min = min(t_x_1, t_x_2); 
+    var t_max = max(t_x_1, t_x_2); 
+
+    let t_y_1 = (aabb_min.y - (*ray).origin.y) / (*ray).dir.y;
+    let t_y_2 = (aabb_max.y - (*ray).origin.y) / (*ray).dir.y;
+    t_min = min(t_min, min(t_y_1, t_y_2)); 
+    t_max = max(t_max, max(t_y_1, t_y_2)); 
+
+    let t_z_1 = (aabb_min.z - (*ray).origin.z) / (*ray).dir.z;
+    let t_z_2 = (aabb_max.z - (*ray).origin.z) / (*ray).dir.z;
+    t_min = min(t_min, min(t_z_1, t_z_2)); 
+    t_max = max(t_max, max(t_z_1, t_z_2)); 
+
+    if (t_max >= t_min && t_min < (*ray).record.t && t_max > 0.0) {
+        return t_min;
+    } else {
+        return 1e30f;
+    }
 }
-
-// fn ray_aabb_intersect(ray_origin: vec3<f32>, ray_dir: vec3<f32>, ray_t: f32, aabb_min: vec3<f32>, aabb_max: vec3<f32>) -> bool {
-//     let t_x_1 = (aabb_min.x - ray_origin.x) / ray_direction.x;
-//     let t_x_2 = (aabb_max.x - ray_origin.x) / ray_direction.x;
-//     var t_min = min(t_x_1, t_x_2); 
-//     var t_max = max(t_x_1, t_x_2); 
-
-//     let t_y_1 = (aabb_min.y - ray_origin.y) / ray_direction.y;
-//     let t_y_2 = (aabb_max.y - ray_origin.y) / ray_direction.y;
-//     t_min = min(t_min, min(t_y_1, t_y_2)); 
-//     t_max = max(t_max, max(t_y_1, t_y_2)); 
-
-//     let t_z_1 = (aabb_min.z - ray_origin.z) / ray_direction.z;
-//     let t_z_2 = (aabb_max.z - ray_origin.z) / ray_direction.z;
-//     t_min = min(t_min, min(t_z_1, t_z_2)); 
-//     t_max = max(t_max, max(t_z_1, t_z_2)); 
-
-//     return t_max >= t_min && t_min < ray_t && t_max > 0.0;
-// }
 
 
 // fn raySphereIntersect(vec3 r0, vec3 rd, vec3 s0, float sr) {

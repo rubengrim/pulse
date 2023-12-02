@@ -1,4 +1,5 @@
 use bevy::{
+    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     prelude::*,
     render::{
         camera::CameraRenderGraph,
@@ -15,6 +16,8 @@ fn main() {
         PulsePlugin,
         PulsePathTracerPlugin,
         NoCameraPlayerPlugin,
+        FrameTimeDiagnosticsPlugin,
+        LogDiagnosticsPlugin::default(),
     ))
     .add_systems(Startup, setup)
     .run();

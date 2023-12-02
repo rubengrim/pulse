@@ -1,7 +1,7 @@
 use super::PulseTriangle;
 use bevy::{prelude::*, render::render_resource::ShaderType};
 
-#[derive(Default, ShaderType, Clone)]
+#[derive(Default, ShaderType, Clone, Debug)]
 pub struct BVHNode {
     pub aabb_min: Vec3,
     pub aabb_max: Vec3,
@@ -40,6 +40,8 @@ pub fn build_bvh(tris: &Vec<PulseTriangle>) -> BVH {
     // Ugly temporary fix should already use u32
     let tri_indices = tri_indices.iter().map(|i| *i as u32).collect::<Vec<u32>>();
 
+    warn!("{:?}", nodes);
+
     BVH { nodes, tri_indices }
 }
 
@@ -50,7 +52,7 @@ pub fn subdivide(
     centroids: &Vec<Vec3>,
     tri_indices: &mut Vec<usize>,
 ) {
-    if nodes[node_idx].primitive_count <= 2 {
+    if nodes[node_idx].primitive_count <= 4 {
         return;
     }
 
