@@ -149,7 +149,6 @@ fn prepare_mesh_assets(extracted: Res<ExtractedMeshAssets>, mut meshes: ResMut<P
             })
         }
 
-        warn!("Loaded mesh with {} triangles.", triangles.len());
         let bvh = build_bvh(&triangles);
         meshes.0.insert(id.clone(), PulseMesh { triangles, bvh });
     }

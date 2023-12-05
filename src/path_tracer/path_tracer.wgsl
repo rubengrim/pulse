@@ -51,7 +51,7 @@ fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
     var ray = Ray();
     ray.origin = view.world_position;
     ray.dir = normalize((ray_target.xyz / ray_target.w) - ray.origin);
-    let t_far = 100000.0;
+    let t_far = 1e30;
     ray.record = HitRecord(t_far, vec3<f32>(0.0, 0.0, 0.0));
 
     var color_out: vec4<f32>;
@@ -63,9 +63,6 @@ fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
         color_out = vec4<f32>(0.0, 0.3, 0.3, 1.0);
     } else {
         // Hit
-        // let a = (*(&vertex_buffers[0]).buffer)[0];
-        // color_out = vec4<f32>(a, a, a, 0.0);
-
         let hit_position = ray.origin + ray.record.t * ray.dir;
         let to_light = light_position - hit_position;
         let surface_normal = normalize(ray.record.normal);
@@ -73,38 +70,14 @@ fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
         color_out = vec4<f32>(f * vec3<f32>(1.0, 0.0, 0.0), 1.0);
         color_out *= light_strength / (length(to_light) * length(to_light));
     }
-
-    // var color_out: vec4<f32>;
-    // let light_position = vec3<f32>(2.0, 2.0, 0.0);
-    // // trace_ray(&ray);
-    // ray_sphere_intersect(&ray, vec3<f32>(0.0, 0.0, 0.0), 1.0);
-    // if ray.record.t < 0.1 || ray.record.t >= t_far {
-    //     // Miss
-    //     color_out = vec4<f32>(0.0, 0.3, 0.3, 1.0);
-    // } else {
-    //     // Hit
-    //     // let a = (*(&vertex_buffers[0]).buffer)[0];
-    //     // color_out = vec4<f32>(a, a, a, 0.0);
-
-    //     let hit_position = ray.origin + ray.record.t * ray.dir;
-    //     let to_light = normalize(light_position - hit_position);
-    //     let surface_normal = normalize(ray.record.normal);
-    //     let f = dot(to_light, surface_normal);
-    //     color_out = vec4<f32>(f * vec3<f32>(1.0, 0.0, 0.0), 1.0);
-    // }
-
-    // var c: vec4<f32>;
-    // if length(ray_target.xy) < 0.3 {
-    
+  
     textureStore(output_texture, id.xy, color_out);
 }
 
 fn trace_ray(ray: ptr<function, Ray>)  {
     ray_bvh_intersect(ray);
-    // for (var i: u32 = 0u; i < nodes[0].primitive_count; i += 1u) {
-    //     let tri_idx = triangle_indices[nodes[0].first_primitive + i];
-    //     ray_triangle_intersect(ray, triangles[tri_idx]);
-    // }
+    // (*ray).record.t = ray_aabb_intersect(ray, vec3<f32>(-1.0, -1.0, -4.0), vec3<f32>(1.0, 1.0, -2.0));
+    // (*ray).record.t = 10.0;
 }
 
 fn ray_bvh_intersect(ray: ptr<function, Ray>) {
@@ -112,7 +85,7 @@ fn ray_bvh_intersect(ray: ptr<function, Ray>) {
     var stack: array<u32, 64>;
     var stack_ptr = 0;
     var iteration = 0;
-    let max_iterations = 10000;
+    let max_iterations = 1000000;
     while iteration < max_iterations {
         iteration += 1;
         if nodes[node].primitive_count > 0u {
@@ -155,7 +128,6 @@ fn ray_bvh_intersect(ray: ptr<function, Ray>) {
                 stack_ptr += 1;
             }
         }
-                
     }
 }
 
@@ -167,13 +139,13 @@ fn ray_aabb_intersect(ray: ptr<function, Ray>, aabb_min: vec3<f32>, aabb_max: ve
 
     let t_y_1 = (aabb_min.y - (*ray).origin.y) / (*ray).dir.y;
     let t_y_2 = (aabb_max.y - (*ray).origin.y) / (*ray).dir.y;
-    t_min = min(t_min, min(t_y_1, t_y_2)); 
-    t_max = max(t_max, max(t_y_1, t_y_2)); 
+    t_min = max(t_min, min(t_y_1, t_y_2)); 
+    t_max = min(t_max, max(t_y_1, t_y_2)); 
 
     let t_z_1 = (aabb_min.z - (*ray).origin.z) / (*ray).dir.z;
     let t_z_2 = (aabb_max.z - (*ray).origin.z) / (*ray).dir.z;
-    t_min = min(t_min, min(t_z_1, t_z_2)); 
-    t_max = max(t_max, max(t_z_1, t_z_2)); 
+    t_min = max(t_min, min(t_z_1, t_z_2)); 
+    t_max = min(t_max, max(t_z_1, t_z_2)); 
 
     if (t_max >= t_min && t_min < (*ray).record.t && t_max > 0.0) {
         return t_min;
@@ -181,7 +153,6 @@ fn ray_aabb_intersect(ray: ptr<function, Ray>, aabb_min: vec3<f32>, aabb_max: ve
         return 1e30f;
     }
 }
-
 
 // fn raySphereIntersect(vec3 r0, vec3 rd, vec3 s0, float sr) {
 //     // - r0: ray origin
