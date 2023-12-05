@@ -112,7 +112,7 @@ fn ray_bvh_intersect(ray: ptr<function, Ray>) {
     var stack: array<u32, 64>;
     var stack_ptr = 0;
     var iteration = 0;
-    let max_iterations = 1000;
+    let max_iterations = 10000;
     while iteration < max_iterations {
         iteration += 1;
         if nodes[node].primitive_count > 0u {

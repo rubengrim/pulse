@@ -56,18 +56,30 @@ pub fn subdivide(
         return;
     }
 
-    let extent = nodes[node_idx].aabb_max - nodes[node_idx].aabb_min;
-
-    // Find longest axis.
-    let mut axis = 0;
-    if extent.y > extent.x {
-        axis = 1;
+    let mut best_axis = 0;
+    let mut best_position = 0.0;
+    let mut best_cost = 1e30;
+    for axis in 0..3 {
+        for i in 0..nodes[node_idx].primitive_count {
+            let candidate_position =
+                centroids[tri_indices[(nodes[node_idx].child_a_idx + i) as usize]][axis];
+            let cost = evaluate_sah(
+                &nodes[node_idx],
+                axis,
+                candidate_position,
+                tris,
+                centroids,
+                tri_indices,
+            );
+            if cost < best_cost {
+                best_position = candidate_position;
+                best_axis = axis;
+                best_cost = cost;
+            }
+        }
     }
-    if extent.z > extent[axis] {
-        axis = 2;
-    }
-
-    let split_position = nodes[node_idx].aabb_min[axis] + 0.5 * extent[axis];
+    let axis = best_axis;
+    let split_position = best_position;
 
     let mut i = nodes[node_idx].first_primitive;
     let mut j = i + nodes[node_idx].primitive_count - 1;
@@ -118,6 +130,60 @@ pub fn subdivide(
         centroids,
         tri_indices,
     );
+}
+
+// Convenience struct for evaluate_sah()
+#[derive(Default)]
+struct AABB {
+    min: Vec3,
+    max: Vec3,
+}
+
+impl AABB {
+    pub fn grow(&mut self, p: Vec3) {
+        self.min = self.min.min(p);
+        self.max = self.max.max(p);
+    }
+
+    pub fn area(&self) -> f32 {
+        let e = self.max - self.min;
+        e.x * e.y + e.y * e.z + e.z * e.x
+    }
+}
+
+fn evaluate_sah(
+    node: &BVHNode,
+    axis: usize,
+    position: f32,
+    tris: &Vec<PulseTriangle>,
+    centroids: &Vec<Vec3>,
+    tri_indices: &mut Vec<usize>,
+) -> f32 {
+    let mut box_a = AABB::default();
+    let mut box_b = AABB::default();
+    let mut a_count = 0;
+    let mut b_count = 0;
+    for i in 0..node.primitive_count {
+        let triangle = &tris[tri_indices[(node.first_primitive + i) as usize]];
+        let centroid = centroids[tri_indices[(node.first_primitive + i) as usize]];
+        if centroid[axis] < position {
+            a_count += 1;
+            box_a.grow(triangle.positions[0]);
+            box_a.grow(triangle.positions[1]);
+            box_a.grow(triangle.positions[2]);
+        } else {
+            b_count += 1;
+            box_b.grow(triangle.positions[0]);
+            box_b.grow(triangle.positions[1]);
+            box_b.grow(triangle.positions[2]);
+        }
+    }
+    let cost = a_count as f32 * box_a.area() + b_count as f32 * box_b.area();
+    if cost > 0.0 {
+        cost
+    } else {
+        1e32
+    }
 }
 
 fn calculate_node_aabb(node: &mut BVHNode, tris: &Vec<PulseTriangle>, tri_indices: &Vec<usize>) {
