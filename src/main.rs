@@ -6,7 +6,8 @@ use bevy::{
         mesh::{Indices, PrimitiveTopology},
     },
 };
-use bevy_flycam::prelude::*;
+// use bevy_flycam::prelude::*;
+use bevy_camera_controller::*;
 use pulse::{path_tracer::*, PulsePlugin, PULSE_GRAPH};
 
 fn main() {
@@ -15,7 +16,7 @@ fn main() {
         DefaultPlugins,
         PulsePlugin,
         PulsePathTracerPlugin,
-        NoCameraPlayerPlugin,
+        CameraControllerPlugin,
         FrameTimeDiagnosticsPlugin,
         LogDiagnosticsPlugin::default(),
     ))
@@ -64,10 +65,16 @@ fn setup(mut commands: Commands, mut mesh_assets: ResMut<Assets<Mesh>>) {
     //     ..default()
     // });
 
-    commands.spawn(PbrBundle {
-        mesh: mesh_assets.add(Mesh::from(shape::Torus::default())),
-        ..default()
-    });
+    let camera_target = commands
+        .spawn(PbrBundle {
+            mesh: mesh_assets.add(Mesh::from(shape::Torus {
+                subdivisions_segments: 64,
+                subdivisions_sides: 48,
+                ..default()
+            })),
+            ..default()
+        })
+        .id();
 
     commands.spawn((
         Camera3dBundle {
@@ -83,6 +90,10 @@ fn setup(mut commands: Commands, mut mesh_assets: ResMut<Assets<Mesh>>) {
             ..default()
         },
         PulsePathTracer::default(),
-        FlyCam,
+        CameraController::from_type(CameraControllerType::Orbit(OrbitCameraControllerConfig {
+            target_entity: Some(camera_target),
+            target_offset: Vec3::ZERO,
+            ..default()
+        })),
     ));
 }

@@ -198,7 +198,7 @@ impl FromWorld for PulseSceneBindGroupLayout {
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
-                    count: Some(unsafe { NonZeroU32::new_unchecked(12) }),
+                    count: None,
                 },
                 // Triangle indices
                 BindGroupLayoutEntry {
@@ -209,7 +209,7 @@ impl FromWorld for PulseSceneBindGroupLayout {
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
-                    count: Some(unsafe { NonZeroU32::new_unchecked(12) }),
+                    count: None,
                 },
                 // Nodes
                 BindGroupLayoutEntry {

@@ -336,6 +336,7 @@ version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4bc7e09282a82a48d70ade0c4c1154b0fd7882a735a39c66766a5d0f4718ea9"
 dependencies = [
+ "bevy_dylib",
  "bevy_internal",
 ]
 
@@ -449,6 +450,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_camera_controller"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+]
+
+[[package]]
 name = "bevy_core"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -512,6 +520,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_dylib"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "45b99001eb4837c78d9c63cc8b32fda61ea96b194a2cda54b569aeee69a9853c"
+dependencies = [
+ "bevy_internal",
+]
+
+[[package]]
 name = "bevy_ecs"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -552,15 +569,6 @@ checksum = "5328a3715e933ebbff07d0e99528dc423c4f7a53590ed1ac19a120348b028990"
 dependencies = [
  "bevy_macro_utils",
  "encase_derive_impl",
-]
-
-[[package]]
-name = "bevy_flycam"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1ff8b60a0f7acbbbfc0af92f04fcb5e9fc1b44b873553ddb3f12ce5764326b4"
-dependencies = [
- "bevy",
 ]
 
 [[package]]
@@ -2728,7 +2736,7 @@ name = "pulse"
 version = "0.1.0"
 dependencies = [
  "bevy",
- "bevy_flycam",
+ "bevy_camera_controller",
  "bytemuck",
 ]
 
