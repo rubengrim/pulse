@@ -68,12 +68,16 @@ impl ViewNode for PulsePathTracerNode {
             label: Some("pulse_path_tracer_pass"),
         });
 
+        compute_pass.push_debug_group("path_trace");
+
         compute_pass.set_bind_group(0, &scene_bind_group, &[]);
         compute_pass.set_bind_group(1, &view_bind_group, &[view_offset.offset]);
         compute_pass.set_pipeline(&pipeline);
         let num_workgroups_x = (render_target.width() as f32 / 8.0).ceil() as u32;
         let num_workgroups_y = (render_target.height() as f32 / 8.0).ceil() as u32;
         compute_pass.dispatch_workgroups(num_workgroups_x, num_workgroups_y, 1);
+
+        compute_pass.pop_debug_group();
 
         Ok(())
     }

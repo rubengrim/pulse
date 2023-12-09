@@ -60,21 +60,23 @@ fn setup(mut commands: Commands, mut mesh_assets: ResMut<Assets<Mesh>>) {
     //     ..default()
     // });
 
-    // commands.spawn(PbrBundle {
-    //     mesh: mesh_assets.add(Mesh::from(shape::Cube { size: 1.0 })),
-    //     ..default()
-    // });
-
     let camera_target = commands
         .spawn(PbrBundle {
-            mesh: mesh_assets.add(Mesh::from(shape::Torus {
-                subdivisions_segments: 64,
-                subdivisions_sides: 48,
-                ..default()
-            })),
+            mesh: mesh_assets.add(Mesh::from(shape::Cube { size: 1.0 })),
+            transform: Transform::from_scale(Vec3::new(3.0, 1.0, 1.0)),
             ..default()
         })
         .id();
+
+    commands.spawn(PbrBundle {
+        mesh: mesh_assets.add(Mesh::from(shape::Torus {
+            subdivisions_segments: 32,
+            subdivisions_sides: 24,
+            ..default()
+        })),
+        transform: Transform::from_xyz(1.0, 2.0, -3.0),
+        ..default()
+    });
 
     commands.spawn((
         Camera3dBundle {
