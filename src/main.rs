@@ -7,7 +7,7 @@ use bevy::{
     },
 };
 // use bevy_flycam::prelude::*;
-use bevy_camera_controller::*;
+use bevy_camera_operator::*;
 use pulse::{path_tracer::*, PulsePlugin, PULSE_GRAPH};
 
 fn main() {
@@ -81,6 +81,7 @@ fn setup(mut commands: Commands, mut mesh_assets: ResMut<Assets<Mesh>>) {
     commands.spawn((
         Camera3dBundle {
             camera_render_graph: CameraRenderGraph::new(PULSE_GRAPH),
+            transform: Transform::from_xyz(0.0, 0.0, 2.0),
             camera: Camera {
                 hdr: true,
                 ..default()
@@ -92,10 +93,6 @@ fn setup(mut commands: Commands, mut mesh_assets: ResMut<Assets<Mesh>>) {
             ..default()
         },
         PulsePathTracer::default(),
-        CameraController::from_type(CameraControllerType::Orbit(OrbitCameraControllerConfig {
-            target_entity: Some(camera_target),
-            target_offset: Vec3::ZERO,
-            ..default()
-        })),
+        FreeFlyCameraController::new(FreeFlyCameraControllerConfig::default()),
     ));
 }

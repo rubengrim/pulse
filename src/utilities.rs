@@ -1,9 +1,12 @@
-use bevy::render::{
-    render_resource::{
-        encase::internal::WriteInto, Buffer, BufferDescriptor, BufferUsages,
-        CommandEncoderDescriptor, ShaderSize, ShaderType, StorageBuffer, UniformBuffer,
+use bevy::{
+    prelude::*,
+    render::{
+        render_resource::{
+            encase::internal::WriteInto, Buffer, BufferDescriptor, BufferUsages,
+            CommandEncoderDescriptor, ShaderSize, ShaderType, StorageBuffer, UniformBuffer,
+        },
+        renderer::{RenderDevice, RenderQueue},
     },
-    renderer::{RenderDevice, RenderQueue},
 };
 
 pub fn create_uniform_buffer<T: ShaderType + WriteInto>(
@@ -34,4 +37,13 @@ pub fn create_storage_buffer<T: ShaderSize + WriteInto>(
     buffer.add_usages(BufferUsages::STORAGE);
     buffer.write_buffer(render_device, render_queue);
     buffer
+}
+
+pub fn transform(m: Mat4, v: Vec3) -> Vec3 {
+    let homogeneous = m.mul_vec4(Vec4::new(v.x, v.y, v.z, 1.0));
+    homogeneous.xyz() / homogeneous.w
+}
+
+pub fn transform_dir(m: Mat4, v: Vec3) -> Vec3 {
+    m.mul_vec4(Vec4::new(v.x, v.y, v.z, 0.0)).xyz()
 }

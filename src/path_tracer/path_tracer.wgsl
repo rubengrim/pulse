@@ -115,15 +115,12 @@ fn trace_ray(ray: ptr<function, Ray>)  {
 fn get_node(index: u32, instance_index: u32) -> BVHNode {
     let instance = instances[instance_index];
     return nodes[index + instance.node_offset];
-    // return nodes[index];
 }
 
 fn get_triangle(index: u32, instance_index: u32) -> PulseTriangle {
     let instance = instances[instance_index];
     let triangle_index = triangle_indices[index + instance.index_offset];
     return triangles[triangle_index + instance.triangle_offset];
-    // let triangle_index = triangle_indices[index];
-    // return triangles[triangle_index];
 }
 
 fn traverse_bvh(ray: ptr<function, Ray>, instance_index: u32) {

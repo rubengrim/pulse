@@ -16,9 +16,12 @@ use bevy::{
     utils::{HashMap, HashSet},
 };
 use std::num::NonZeroU32;
+use std::time::Instant;
 
-pub mod bvh;
-use bvh::*;
+pub mod blas;
+use blas::*;
+pub mod tlas;
+use tlas::*;
 
 pub struct PulseScenePlugin;
 
@@ -99,7 +102,7 @@ pub struct PulseTriangle {
 
 pub struct PulseMesh {
     pub triangles: Vec<PulseTriangle>,
-    pub bvh: BVH,
+    pub bvh: Blas,
 }
 
 #[derive(Resource, Default)]
@@ -160,7 +163,15 @@ fn prepare_extracted_mesh_assets(
             })
         }
 
-        let bvh = build_bvh(&triangles);
+        let blas_time_begin = Instant::now();
+        let bvh = build_blas(&triangles);
+        info!(
+            "Built blas for mesh id:{:?} with triangle count {:?} in {:.3?}",
+            id,
+            triangles.len(),
+            blas_time_begin.elapsed(),
+        );
+
         meshes.0.insert(id.clone(), PulseMesh { triangles, bvh });
     }
 
@@ -173,7 +184,7 @@ fn prepare_extracted_mesh_assets(
 pub struct PulsePreparedMeshAssetData {
     pub triangles: Vec<PulseTriangle>,
     pub indices: Vec<u32>,
-    pub nodes: Vec<BVHNode>,
+    pub nodes: Vec<PulseBLASNode>,
 }
 
 // Index into buffers in `PulsePreparedMeshAssetData`.
@@ -203,23 +214,15 @@ fn prepare_mesh_data(
 
     for (id, mesh) in meshes.0.iter() {
         let triangle_offset = prepared_mesh_data.triangles.len() as u32;
-        // let triangle_count = mesh.triangles.len() as u32;
-
         let index_offset = prepared_mesh_data.indices.len() as u32;
-        // let index_count = mesh.bvh.tri_indices.len() as u32;
-
         let node_offset = prepared_mesh_data.nodes.len() as u32;
-        // let node_count = mesh.bvh.nodes.len() as u32;
 
         mesh_indices.0.insert(
             id.clone(),
             PulseMeshIndex {
                 triangle_offset,
-                // triangle_count,
                 index_offset,
-                // index_count,
                 node_offset,
-                // node_count,
             },
         );
 

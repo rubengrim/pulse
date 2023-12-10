@@ -1,9 +1,8 @@
 use super::PulseTriangle;
 use bevy::{prelude::*, render::render_resource::ShaderType};
-use std::time::Instant;
 
 #[derive(Default, ShaderType, Clone, Debug)]
-pub struct BVHNode {
+pub struct PulseBLASNode {
     pub aabb_min: Vec3,
     pub aabb_max: Vec3,
     // child_b_idx is always child_a_idx + 1 so don't store it.
@@ -13,13 +12,13 @@ pub struct BVHNode {
     pub tri_count: u32,
 }
 
-pub struct BVH {
-    pub nodes: Vec<BVHNode>,
+pub struct Blas {
+    pub nodes: Vec<PulseBLASNode>,
     pub tri_indices: Vec<u32>,
 }
 
 #[derive(Default, Copy, Clone)]
-struct AABB {
+pub struct AABB {
     min: Vec3,
     max: Vec3,
 }
@@ -47,9 +46,7 @@ struct Bin {
     tri_count: u32,
 }
 
-pub fn build_bvh(tris: &Vec<PulseTriangle>) -> BVH {
-    let time_begin = Instant::now();
-
+pub fn build_blas(tris: &Vec<PulseTriangle>) -> Blas {
     let mut tri_indices: Vec<usize> = vec![];
     // TODO: Use AABB centers instead of triangle centroids.
     let mut centroids: Vec<Vec3> = vec![];
@@ -59,8 +56,8 @@ pub fn build_bvh(tris: &Vec<PulseTriangle>) -> BVH {
         tri_indices.push(i);
     }
 
-    let mut nodes: Vec<BVHNode> = vec![];
-    let mut root = BVHNode::default();
+    let mut nodes: Vec<PulseBLASNode> = vec![];
+    let mut root = PulseBLASNode::default();
     root.child_a_idx = 0;
     root.first_tri = 0;
     root.tri_count = tri_indices.len() as u32;
@@ -69,21 +66,15 @@ pub fn build_bvh(tris: &Vec<PulseTriangle>) -> BVH {
 
     subdivide(0, &mut nodes, tris, &centroids, &mut tri_indices);
 
-    // Ugly temporary fix should already use u32
+    // Ugly fix. Should already use u32
     let tri_indices = tri_indices.iter().map(|i| *i as u32).collect::<Vec<u32>>();
 
-    info!(
-        "Built BVH for {:?} triangles in {:.3?}",
-        tris.len(),
-        time_begin.elapsed(),
-    );
-
-    BVH { nodes, tri_indices }
+    Blas { nodes, tri_indices }
 }
 
 pub fn subdivide(
     node_idx: usize,
-    nodes: &mut Vec<BVHNode>,
+    nodes: &mut Vec<PulseBLASNode>,
     tris: &Vec<PulseTriangle>,
     centroids: &Vec<Vec3>,
     tri_indices: &mut Vec<usize>,
@@ -119,13 +110,13 @@ pub fn subdivide(
 
     let node_count = nodes.len() as u32;
 
-    let mut child_a = BVHNode::default();
+    let mut child_a = PulseBLASNode::default();
     child_a.first_tri = nodes[node_idx].first_tri;
     child_a.tri_count = a_count;
     calculate_node_aabb(&mut child_a, tris, tri_indices);
     nodes.push(child_a);
 
-    let mut child_b = BVHNode::default();
+    let mut child_b = PulseBLASNode::default();
     child_b.first_tri = i;
     child_b.tri_count = nodes[node_idx].tri_count - a_count;
     calculate_node_aabb(&mut child_b, tris, tri_indices);
@@ -153,7 +144,7 @@ pub fn subdivide(
 
 // Returns (axis, position, cost)
 fn find_best_split_plane(
-    node: &BVHNode,
+    node: &PulseBLASNode,
     tris: &Vec<PulseTriangle>,
     centroids: &Vec<Vec3>,
     tri_indices: &Vec<usize>,
@@ -232,17 +223,18 @@ fn find_best_split_plane(
             }
         }
     }
+
     (best_axis, best_position, best_cost)
 }
 
-fn calculate_node_cost(node: &BVHNode) -> f32 {
+fn calculate_node_cost(node: &PulseBLASNode) -> f32 {
     let e = node.aabb_max - node.aabb_min;
     let area = e.x * e.y + e.y * e.z + e.z * e.x;
     node.tri_count as f32 * area
 }
 
 fn evaluate_sah(
-    node: &BVHNode,
+    node: &PulseBLASNode,
     axis: usize,
     position: f32,
     tris: &Vec<PulseTriangle>,
@@ -276,7 +268,11 @@ fn evaluate_sah(
     }
 }
 
-fn calculate_node_aabb(node: &mut BVHNode, tris: &Vec<PulseTriangle>, tri_indices: &Vec<usize>) {
+fn calculate_node_aabb(
+    node: &mut PulseBLASNode,
+    tris: &Vec<PulseTriangle>,
+    tri_indices: &Vec<usize>,
+) {
     node.aabb_min = Vec3::MAX;
     node.aabb_max = Vec3::MIN;
     for i in node.first_tri..(node.first_tri + node.tri_count) {
