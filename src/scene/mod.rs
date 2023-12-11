@@ -11,27 +11,35 @@ use bevy::{
         renderer::{RenderDevice, RenderQueue},
         texture::TextureCache,
         view::ViewUniforms,
-        Extract, Render, RenderApp, RenderSet,
+        Extract, MainWorld, Render, RenderApp, RenderSet,
     },
     utils::{HashMap, HashSet},
 };
 use std::num::NonZeroU32;
+use std::sync::Mutex;
 use std::time::Instant;
 
 pub mod blas;
 use blas::*;
-pub mod tlas;
-use tlas::*;
+// pub mod tlas;
+// use tlas::*;
 
 pub struct PulseScenePlugin;
 
 impl Plugin for PulseScenePlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<AABBsToDraw>()
+            .add_systems(Update, draw_aabbs);
+
         let render_app = app.sub_app_mut(RenderApp);
         render_app
             .add_systems(
                 ExtractSchedule,
-                (extract_mesh_assets, extract_mesh_instances),
+                (
+                    extract_mesh_assets,
+                    extract_mesh_instances,
+                    // send_aabbs_to_app_world,
+                ),
             )
             .add_systems(
                 Render,
@@ -58,6 +66,46 @@ impl Plugin for PulseScenePlugin {
         render_app
             .init_resource::<PulseSceneBindGroup>()
             .init_resource::<PulseSceneBindGroupLayout>();
+    }
+}
+
+#[derive(Resource, Default)]
+pub struct AABBsToDraw(pub Mutex<Vec<(Vec3, Vec3)>>);
+
+pub fn send_aabbs_to_app_world(
+    main_world: ResMut<MainWorld>,
+    instances: Res<ExtractedMeshInstances>,
+    meshes: Res<PulseMeshes>,
+) {
+    let mut aabbs = main_world.resource::<AABBsToDraw>().0.lock().unwrap();
+    *aabbs = vec![];
+    for (handle, transform) in instances.0.iter() {
+        let Handle::Weak(id) = handle.clone_weak() else {
+            continue;
+        };
+        let transform_mat = transform.compute_matrix();
+        let Some(mesh) = meshes.0.get(&id) else {
+            continue;
+        };
+        for node in &mesh.bvh.nodes {
+            if node.tri_count > 0 {
+                // warn!("tri_count: {}", node.tri_count);
+                let min = transform_pos(transform_mat, node.aabb_min);
+                let max = transform_pos(transform_mat, node.aabb_max);
+                aabbs.push((min, max));
+            }
+        }
+    }
+}
+
+fn draw_aabbs(aabbs: Res<AABBsToDraw>, mut gizmos: Gizmos) {
+    let aabbs = &*aabbs.0.lock().unwrap();
+    for (min, max) in aabbs.iter() {
+        let e = *max - *min;
+        gizmos.cuboid(
+            Transform::from_translation(*min + 0.5 * e).with_scale(Vec3::new(e.x, e.y, e.z)),
+            Color::CYAN,
+        );
     }
 }
 
@@ -140,10 +188,7 @@ fn prepare_extracted_mesh_assets(
             .collect::<Vec<Vec2>>();
 
         let indices: Vec<u32> = match mesh.indices() {
-            Some(Indices::U16(..)) => {
-                error!("Cannot load mesh that uses a u16 index buffer.");
-                return;
-            }
+            Some(Indices::U16(values)) => values.iter().map(|v| *v as u32).collect::<Vec<u32>>(),
             Some(Indices::U32(values)) => values.clone(),
             None => {
                 error!("Cannot load mesh with no index buffer.");

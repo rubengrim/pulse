@@ -17,14 +17,19 @@ fn main() {
         PulsePlugin,
         PulsePathTracerPlugin,
         CameraControllerPlugin,
-        FrameTimeDiagnosticsPlugin,
-        LogDiagnosticsPlugin::default(),
+        // FrameTimeDiagnosticsPlugin,
+        // LogDiagnosticsPlugin::default(),
     ))
     .add_systems(Startup, setup)
     .run();
 }
 
-fn setup(mut commands: Commands, mut mesh_assets: ResMut<Assets<Mesh>>) {
+fn setup(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut mesh_assets: ResMut<Assets<Mesh>>,
+    mut mat_assets: ResMut<Assets<StandardMaterial>>,
+) {
     // suppose Y-up right hand, and camera look from +z to -z
     let vertices = &[
         // Plane
@@ -49,6 +54,17 @@ fn setup(mut commands: Commands, mut mesh_assets: ResMut<Assets<Mesh>>) {
         // 2, 3, 0,
     ]);
 
+    // // note that we have to include the `Scene0` label
+    // let my_gltf = asset_server.load("suzanne.glb#Scene0");
+
+    // // to position our 3d model, simply use the Transform
+    // // in the SceneBundle
+    // commands.spawn(SceneBundle {
+    //     scene: my_gltf,
+    //     transform: Transform::from_xyz(0.0, 0.0, -5.0),
+    //     ..Default::default()
+    // });
+
     let mesh = Mesh::new(PrimitiveTopology::TriangleList)
         .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
         .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
@@ -60,13 +76,13 @@ fn setup(mut commands: Commands, mut mesh_assets: ResMut<Assets<Mesh>>) {
     //     ..default()
     // });
 
-    let camera_target = commands
-        .spawn(PbrBundle {
-            mesh: mesh_assets.add(Mesh::from(shape::Cube { size: 1.0 })),
-            transform: Transform::from_scale(Vec3::new(3.0, 1.0, 1.0)),
-            ..default()
-        })
-        .id();
+    // let camera_target = commands
+    //     .spawn(PbrBundle {
+    //         mesh: mesh_assets.add(Mesh::from(shape::Cube { size: 1.0 })),
+    //         transform: Transform::from_scale(Vec3::new(3.0, 1.0, 1.0)),
+    //         ..default()
+    //     })
+    //     .id();
 
     commands.spawn(PbrBundle {
         mesh: mesh_assets.add(Mesh::from(shape::Torus {
@@ -74,9 +90,29 @@ fn setup(mut commands: Commands, mut mesh_assets: ResMut<Assets<Mesh>>) {
             subdivisions_sides: 24,
             ..default()
         })),
-        transform: Transform::from_xyz(1.0, 2.0, -3.0),
+        material: mat_assets.add(StandardMaterial {
+            base_color: Color::rgba(1.0, 0.6, 0.0, 1.0),
+            ..default()
+        }),
+        transform: Transform::from_xyz(0.0, 0.0, -1.5),
         ..default()
     });
+
+    // Light
+    commands.spawn(PointLightBundle {
+        point_light: PointLight {
+            intensity: 6000.0,
+            shadows_enabled: true,
+            ..default()
+        },
+        transform: Transform::from_xyz(4.0, 8.0, 4.0),
+        ..default()
+    });
+
+    // commands.spawn((
+    //     Camera3dBundle::default(),
+    //     FreeFlyCameraController::new(FreeFlyCameraControllerConfig::default()),
+    // ));
 
     commands.spawn((
         Camera3dBundle {

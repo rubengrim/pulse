@@ -39,7 +39,7 @@ pub fn create_storage_buffer<T: ShaderSize + WriteInto>(
     buffer
 }
 
-pub fn transform(m: Mat4, v: Vec3) -> Vec3 {
+pub fn transform_pos(m: Mat4, v: Vec3) -> Vec3 {
     let homogeneous = m.mul_vec4(Vec4::new(v.x, v.y, v.z, 1.0));
     homogeneous.xyz() / homogeneous.w
 }

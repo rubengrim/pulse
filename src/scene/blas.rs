@@ -69,7 +69,103 @@ pub fn build_blas(tris: &Vec<PulseTriangle>) -> Blas {
     // Ugly fix. Should already use u32
     let tri_indices = tri_indices.iter().map(|i| *i as u32).collect::<Vec<u32>>();
 
+    // for node in &nodes {
+    //     if node.tri_count > 0 {
+    //         warn!("{}", node.tri_count);
+    //     }
+    // }
+
     Blas { nodes, tri_indices }
+}
+
+pub fn subdivide_simple(
+    node_idx: usize,
+    nodes: &mut Vec<PulseBLASNode>,
+    tris: &Vec<PulseTriangle>,
+    centroids: &Vec<Vec3>,
+    tri_indices: &mut Vec<usize>,
+) {
+    if nodes[node_idx].tri_count <= 4 {
+        return;
+    }
+
+    let mut best_axis = 0;
+    let mut best_position = 0.0;
+    let mut best_cost = 1e30;
+    for axis in 0..3 {
+        for i in 0..nodes[node_idx].tri_count {
+            let candidate_position =
+                centroids[tri_indices[(nodes[node_idx].first_tri + i) as usize]][axis];
+            let cost = evaluate_sah(
+                &nodes[node_idx],
+                axis,
+                candidate_position,
+                tris,
+                centroids,
+                tri_indices,
+            );
+            if cost < best_cost {
+                best_position = candidate_position;
+                best_axis = axis;
+                best_cost = cost;
+            }
+        }
+    }
+    let axis = best_axis;
+    let split_position = best_position;
+    // let extent = nodes[node_idx].aabb_max - nodes[node_idx].aabb_min;
+    // let split_position = nodes[node_idx].aabb_min[axis] + 0.5 * extent[axis];
+
+    let mut i = nodes[node_idx].first_tri;
+    let mut j = i + nodes[node_idx].tri_count - 1;
+    while i <= j {
+        if centroids[tri_indices[i as usize]][axis] < split_position {
+            i += 1;
+        } else {
+            swap(tri_indices, i as usize, j as usize);
+            j -= 1;
+        }
+    }
+
+    let a_count = i - nodes[node_idx].first_tri;
+    // Don't split the nodes[node_idx] if either one of it's children contain no primitives.
+    if a_count == 0 || a_count == nodes[node_idx].tri_count {
+        // warn!("Abort splitting. a_count: {a_count}");
+        return;
+    }
+
+    let node_count = nodes.len() as u32;
+
+    let mut child_a = PulseBLASNode::default();
+    child_a.first_tri = nodes[node_idx].first_tri;
+    child_a.tri_count = a_count;
+    calculate_node_aabb(&mut child_a, tris, tri_indices);
+    nodes.push(child_a);
+
+    let mut child_b = PulseBLASNode::default();
+    child_b.first_tri = i;
+    child_b.tri_count = nodes[node_idx].tri_count - a_count;
+    calculate_node_aabb(&mut child_b, tris, tri_indices);
+    nodes.push(child_b);
+
+    nodes[node_idx].child_a_idx = node_count;
+    // Parent nodes[node_idx] is not a leaf, so set prim count to 0.
+    nodes[node_idx].tri_count = 0;
+
+    subdivide_simple(
+        nodes[node_idx].child_a_idx as usize,
+        nodes,
+        tris,
+        centroids,
+        tri_indices,
+    );
+    subdivide_simple(
+        nodes[node_idx].child_a_idx as usize + 1,
+        nodes,
+        tris,
+        centroids,
+        tri_indices,
+    );
 }
 
 pub fn subdivide(
@@ -87,9 +183,10 @@ pub fn subdivide(
         find_best_split_plane(&nodes[node_idx], tris, centroids, tri_indices);
 
     let no_split_cost = calculate_node_cost(&nodes[node_idx]);
-    if split_cost >= no_split_cost {
-        return;
-    }
+    // if split_cost >= no_split_cost {
+    //     warn!("abort cost");
+    //     return;
+    // }
 
     let mut i = nodes[node_idx].first_tri;
     let mut j = i + nodes[node_idx].tri_count - 1;
@@ -105,6 +202,7 @@ pub fn subdivide(
     let a_count = i - nodes[node_idx].first_tri;
     // Don't split the nodes[node_idx] if either one of it's children contain no primitives.
     if a_count == 0 || a_count == nodes[node_idx].tri_count {
+        warn!("abort");
         return;
     }
 
@@ -156,8 +254,10 @@ fn find_best_split_plane(
         let mut bounds_min: f32 = 1e30;
         let mut bounds_max: f32 = -1e30;
         for i in 0..node.tri_count {
-            bounds_min = bounds_min.min(centroids[tri_indices[i as usize]][axis]);
-            bounds_max = bounds_max.max(centroids[tri_indices[i as usize]][axis]);
+            bounds_min =
+                bounds_min.min(centroids[tri_indices[(node.first_tri + i) as usize]][axis]);
+            bounds_max =
+                bounds_max.max(centroids[tri_indices[(node.first_tri + i) as usize]][axis]);
         }
         if bounds_min == bounds_max {
             continue;
@@ -173,7 +273,7 @@ fn find_best_split_plane(
                 ((centroids[tri_indices[(node.first_tri + i) as usize]][axis] - bounds_min)
                     * bin_size_inv) as usize,
             );
-            bins[bin_idx].tri_count = bins[bin_idx].tri_count + 1;
+            bins[bin_idx].tri_count += 1;
             bins[bin_idx].bounds.grow_position(triangle.positions[0]);
             bins[bin_idx].bounds.grow_position(triangle.positions[1]);
             bins[bin_idx].bounds.grow_position(triangle.positions[2]);
@@ -200,7 +300,6 @@ fn find_best_split_plane(
             area_b[BIN_COUNT - 2 - i] = box_b.area();
         }
 
-        // Evaluate SAH for the planes between the bins
         let bin_size = (bounds_max - bounds_min) / BIN_COUNT as f32;
         for i in 0..(BIN_COUNT - 1) {
             let plane_cost = count_a[i] as f32 * area_a[i] + count_b[i] as f32 * area_b[i];
@@ -211,17 +310,17 @@ fn find_best_split_plane(
             }
         }
 
-        let num_steps = 10;
-        let step_size = (bounds_max - bounds_min) / num_steps as f32;
-        for step in 1..num_steps {
-            let candidate_position = bounds_min + step as f32 * step_size;
-            let cost = evaluate_sah(node, axis, candidate_position, tris, centroids, tri_indices);
-            if cost < best_cost {
-                best_position = candidate_position;
-                best_axis = axis;
-                best_cost = cost;
-            }
-        }
+        // let num_steps = 10;
+        // let step_size = (bounds_max - bounds_min) / num_steps as f32;
+        // for step in 1..num_steps {
+        //     let candidate_position = bounds_min + step as f32 * step_size;
+        //     let cost = evaluate_sah(node, axis, candidate_position, tris, centroids, tri_indices);
+        //     if cost < best_cost {
+        //         best_position = candidate_position;
+        //         best_axis = axis;
+        //         best_cost = cost;
+        //     }
+        // }
     }
 
     (best_axis, best_position, best_cost)

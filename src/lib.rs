@@ -10,6 +10,7 @@ use bevy::{
         Render, RenderApp, RenderSet,
     },
 };
+use std::sync::Mutex;
 
 pub mod path_tracer;
 pub mod scene;
