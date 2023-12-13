@@ -10,6 +10,8 @@ use bevy::{
 use bevy_camera_operator::*;
 use pulse::{path_tracer::*, PulsePlugin, PULSE_GRAPH};
 
+pub const RENDER_WITH_PULSE: bool = true;
+
 fn main() {
     let mut app = App::new();
     app.add_plugins((
@@ -79,7 +81,7 @@ fn setup(
     // let camera_target = commands
     //     .spawn(PbrBundle {
     //         mesh: mesh_assets.add(Mesh::from(shape::Cube { size: 1.0 })),
-    //         transform: Transform::from_scale(Vec3::new(3.0, 1.0, 1.0)),
+    //         transform: Transform::from_scale(Vec3::new(0.0, 0.0, 1.0)),
     //         ..default()
     //     })
     //     .id();
@@ -109,26 +111,28 @@ fn setup(
         ..default()
     });
 
-    // commands.spawn((
-    //     Camera3dBundle::default(),
-    //     FreeFlyCameraController::new(FreeFlyCameraControllerConfig::default()),
-    // ));
-
-    commands.spawn((
-        Camera3dBundle {
-            camera_render_graph: CameraRenderGraph::new(PULSE_GRAPH),
-            transform: Transform::from_xyz(0.0, 0.0, 2.0),
-            camera: Camera {
-                hdr: true,
+    if RENDER_WITH_PULSE {
+        commands.spawn((
+            Camera3dBundle {
+                camera_render_graph: CameraRenderGraph::new(PULSE_GRAPH),
+                transform: Transform::from_xyz(0.0, 0.0, 2.0),
+                camera: Camera {
+                    hdr: true,
+                    ..default()
+                },
+                projection: Projection::Perspective(PerspectiveProjection {
+                    fov: 3.1415 / 4.0,
+                    ..default()
+                }),
                 ..default()
             },
-            projection: Projection::Perspective(PerspectiveProjection {
-                fov: 3.1415 / 4.0,
-                ..default()
-            }),
-            ..default()
-        },
-        PulsePathTracer::default(),
-        FreeFlyCameraController::new(FreeFlyCameraControllerConfig::default()),
-    ));
+            PulsePathTracer::default(),
+            FreeFlyCameraController::new(FreeFlyCameraControllerConfig::default()),
+        ));
+    } else {
+        commands.spawn((
+            Camera3dBundle::default(),
+            FreeFlyCameraController::new(FreeFlyCameraControllerConfig::default()),
+        ));
+    }
 }

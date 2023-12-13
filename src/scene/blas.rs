@@ -4,14 +4,14 @@ use bevy::{prelude::*, render::render_resource::ShaderType};
 #[derive(Default, ShaderType, Clone, Debug)]
 pub struct PulseBLASNode {
     pub aabb_min: Vec3,
+    // Index to child a or to first triangle.
+    pub a_or_first_tri: u32,
     pub aabb_max: Vec3,
-    // child_b_idx is always child_a_idx + 1 so don't store it.
-    pub child_a_idx: u32,
-    // Index for tri_indices, not directly for the tri data.
-    pub first_tri: u32,
+    // > 0 indicates leaf and a_or_tri contains index to first tri, index to node child a otherwise.
     pub tri_count: u32,
 }
 
+#[derive(Debug)]
 pub struct Blas {
     pub nodes: Vec<PulseBLASNode>,
     pub tri_indices: Vec<u32>,
@@ -58,8 +58,7 @@ pub fn build_blas(tris: &Vec<PulseTriangle>) -> Blas {
 
     let mut nodes: Vec<PulseBLASNode> = vec![];
     let mut root = PulseBLASNode::default();
-    root.child_a_idx = 0;
-    root.first_tri = 0;
+    root.a_or_first_tri = 0;
     root.tri_count = tri_indices.len() as u32;
     calculate_node_aabb(&mut root, tris, &tri_indices);
     nodes.push(root);
@@ -70,102 +69,10 @@ pub fn build_blas(tris: &Vec<PulseTriangle>) -> Blas {
     let tri_indices = tri_indices.iter().map(|i| *i as u32).collect::<Vec<u32>>();
 
     // for node in &nodes {
-    //     if node.tri_count > 0 {
-    //         warn!("{}", node.tri_count);
-    //     }
+    //     warn!("{:?}", node);
     // }
 
     Blas { nodes, tri_indices }
-}
-
-pub fn subdivide_simple(
-    node_idx: usize,
-    nodes: &mut Vec<PulseBLASNode>,
-    tris: &Vec<PulseTriangle>,
-    centroids: &Vec<Vec3>,
-    tri_indices: &mut Vec<usize>,
-) {
-    if nodes[node_idx].tri_count <= 4 {
-        return;
-    }
-
-    let mut best_axis = 0;
-    let mut best_position = 0.0;
-    let mut best_cost = 1e30;
-    for axis in 0..3 {
-        for i in 0..nodes[node_idx].tri_count {
-            let candidate_position =
-                centroids[tri_indices[(nodes[node_idx].first_tri + i) as usize]][axis];
-            let cost = evaluate_sah(
-                &nodes[node_idx],
-                axis,
-                candidate_position,
-                tris,
-                centroids,
-                tri_indices,
-            );
-            if cost < best_cost {
-                best_position = candidate_position;
-                best_axis = axis;
-                best_cost = cost;
-            }
-        }
-    }
-    let axis = best_axis;
-    let split_position = best_position;
-    // let extent = nodes[node_idx].aabb_max - nodes[node_idx].aabb_min;
-    // let split_position = nodes[node_idx].aabb_min[axis] + 0.5 * extent[axis];
-
-    let mut i = nodes[node_idx].first_tri;
-    let mut j = i + nodes[node_idx].tri_count - 1;
-    while i <= j {
-        if centroids[tri_indices[i as usize]][axis] < split_position {
-            i += 1;
-        } else {
-            swap(tri_indices, i as usize, j as usize);
-            j -= 1;
-        }
-    }
-
-    let a_count = i - nodes[node_idx].first_tri;
-    // Don't split the nodes[node_idx] if either one of it's children contain no primitives.
-    if a_count == 0 || a_count == nodes[node_idx].tri_count {
-        // warn!("Abort splitting. a_count: {a_count}");
-        return;
-    }
-
-    let node_count = nodes.len() as u32;
-
-    let mut child_a = PulseBLASNode::default();
-    child_a.first_tri = nodes[node_idx].first_tri;
-    child_a.tri_count = a_count;
-    calculate_node_aabb(&mut child_a, tris, tri_indices);
-    nodes.push(child_a);
-
-    let mut child_b = PulseBLASNode::default();
-    child_b.first_tri = i;
-    child_b.tri_count = nodes[node_idx].tri_count - a_count;
-    calculate_node_aabb(&mut child_b, tris, tri_indices);
-    nodes.push(child_b);
-
-    nodes[node_idx].child_a_idx = node_count;
-    // Parent nodes[node_idx] is not a leaf, so set prim count to 0.
-    nodes[node_idx].tri_count = 0;
-
-    subdivide_simple(
-        nodes[node_idx].child_a_idx as usize,
-        nodes,
-        tris,
-        centroids,
-        tri_indices,
-    );
-    subdivide_simple(
-        nodes[node_idx].child_a_idx as usize + 1,
-        nodes,
-        tris,
-        centroids,
-        tri_indices,
-    );
 }
 
 pub fn subdivide(
@@ -175,23 +82,24 @@ pub fn subdivide(
     centroids: &Vec<Vec3>,
     tri_indices: &mut Vec<usize>,
 ) {
-    if nodes[node_idx].tri_count <= 4 {
+    if nodes[node_idx].tri_count <= 8 {
         return;
     }
 
-    let (axis, split_position, _split_cost) =
+    let (axis, split_position, split_cost) =
         find_best_split_plane(&nodes[node_idx], tris, centroids, tri_indices);
 
-    // let no_split_cost = calculate_node_cost(&nodes[node_idx]);
+    let no_split_cost = calculate_node_cost(&nodes[node_idx]);
     // if split_cost >= no_split_cost {
-    //     warn!(
-    //         "aborting. split: {}, no_split: {}, ",
-    //         split_cost, no_split_cost
-    //     );
+    //     // warn!(
+    //     //     "aborting. split: {}, no_split: {}, ",
+    //     //     split_cost,
+    //     //     no_split_cost
+    //     // );
     //     return;
     // }
 
-    let mut i = nodes[node_idx].first_tri;
+    let mut i = nodes[node_idx].a_or_first_tri;
     let mut j = i + nodes[node_idx].tri_count - 1;
     while i <= j {
         if centroids[tri_indices[i as usize]][axis] < split_position {
@@ -202,40 +110,38 @@ pub fn subdivide(
         }
     }
 
-    let a_count = i - nodes[node_idx].first_tri;
+    let a_count = i - nodes[node_idx].a_or_first_tri;
     // Don't split the nodes[node_idx] if either one of it's children contain no primitives.
     if a_count == 0 || a_count == nodes[node_idx].tri_count {
-        warn!("abort");
         return;
     }
 
-    let node_count = nodes.len() as u32;
-
     let mut child_a = PulseBLASNode::default();
-    child_a.first_tri = nodes[node_idx].first_tri;
+    child_a.a_or_first_tri = nodes[node_idx].a_or_first_tri;
     child_a.tri_count = a_count;
     calculate_node_aabb(&mut child_a, tris, tri_indices);
+    let child_a_index = nodes.len() as u32;
     nodes.push(child_a);
 
     let mut child_b = PulseBLASNode::default();
-    child_b.first_tri = i;
+    child_b.a_or_first_tri = i;
     child_b.tri_count = nodes[node_idx].tri_count - a_count;
     calculate_node_aabb(&mut child_b, tris, tri_indices);
     nodes.push(child_b);
 
-    nodes[node_idx].child_a_idx = node_count;
+    nodes[node_idx].a_or_first_tri = child_a_index;
     // Parent nodes[node_idx] is not a leaf, so set prim count to 0.
     nodes[node_idx].tri_count = 0;
 
     subdivide(
-        nodes[node_idx].child_a_idx as usize,
+        nodes[node_idx].a_or_first_tri as usize,
         nodes,
         tris,
         centroids,
         tri_indices,
     );
     subdivide(
-        nodes[node_idx].child_a_idx as usize + 1,
+        nodes[node_idx].a_or_first_tri as usize + 1,
         nodes,
         tris,
         centroids,
@@ -258,9 +164,9 @@ fn find_best_split_plane(
         let mut bounds_max: f32 = -1e30;
         for i in 0..node.tri_count {
             bounds_min =
-                bounds_min.min(centroids[tri_indices[(node.first_tri + i) as usize]][axis]);
+                bounds_min.min(centroids[tri_indices[(node.a_or_first_tri + i) as usize]][axis]);
             bounds_max =
-                bounds_max.max(centroids[tri_indices[(node.first_tri + i) as usize]][axis]);
+                bounds_max.max(centroids[tri_indices[(node.a_or_first_tri + i) as usize]][axis]);
         }
         if bounds_min == bounds_max {
             continue;
@@ -271,9 +177,9 @@ fn find_best_split_plane(
         let mut bins: [Bin; BIN_COUNT] = [Bin::default(); BIN_COUNT];
         let bin_size_inv = BIN_COUNT as f32 / (bounds_max - bounds_min);
         for i in 0..node.tri_count {
-            let triangle = &tris[tri_indices[(node.first_tri + i) as usize]];
+            let triangle = &tris[tri_indices[(node.a_or_first_tri + i) as usize]];
             let bin_idx = (BIN_COUNT - 1).min(
-                ((centroids[tri_indices[(node.first_tri + i) as usize]][axis] - bounds_min)
+                ((centroids[tri_indices[(node.a_or_first_tri + i) as usize]][axis] - bounds_min)
                     * bin_size_inv) as usize,
             );
             bins[bin_idx].tri_count += 1;
@@ -348,8 +254,8 @@ fn evaluate_sah(
     let mut a_count = 0;
     let mut b_count = 0;
     for i in 0..node.tri_count {
-        let triangle = &tris[tri_indices[(node.first_tri + i) as usize]];
-        let centroid = centroids[tri_indices[(node.first_tri + i) as usize]];
+        let triangle = &tris[tri_indices[(node.a_or_first_tri + i) as usize]];
+        let centroid = centroids[tri_indices[(node.a_or_first_tri + i) as usize]];
         if centroid[axis] < position {
             a_count += 1;
             box_a.grow_position(triangle.positions[0]);
@@ -377,8 +283,8 @@ fn calculate_node_aabb(
 ) {
     node.aabb_min = Vec3::MAX;
     node.aabb_max = Vec3::MIN;
-    for i in node.first_tri..(node.first_tri + node.tri_count) {
-        let tri_index = tri_indices[i as usize];
+    for i in 0..node.tri_count {
+        let tri_index = tri_indices[(node.a_or_first_tri + i) as usize];
 
         node.aabb_min = node.aabb_min.min(tris[tri_index].positions[0]);
         node.aabb_min = node.aabb_min.min(tris[tri_index].positions[1]);

@@ -38,7 +38,7 @@ impl Plugin for PulseScenePlugin {
                 (
                     extract_mesh_assets,
                     extract_mesh_instances,
-                    // send_aabbs_to_app_world,
+                    send_aabbs_to_app_world,
                 ),
             )
             .add_systems(

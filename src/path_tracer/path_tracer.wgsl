@@ -15,12 +15,9 @@ struct PulseTriangle {
 
 struct BVHNode {
     aabb_min: vec3<f32>,
+    a_or_tri: u32,
     aabb_max: vec3<f32>,
-    // child_b_idx is always child_a_idx + 1 so don't store it.
-    child_a_index: u32,
-    // Index for tri_indices, not directly for the tri data.
-    first_primitive: u32,
-    primitive_count: u32,
+    tri_count: u32,
 }
 
 struct PulseMeshInstance {
@@ -59,7 +56,7 @@ struct ObjectHitRecord {
     normal: vec3f,
 }
 
-@compute @workgroup_size(8, 8, 1)
+@compute @workgroup_size(16, 16, 1)
 fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
     var pixel_uv = (vec2<f32>(id.xy) + 0.5) / view.viewport.zw;
     // Clip position goes from -1 to 1.
@@ -132,9 +129,9 @@ fn traverse_bvh(ray: ptr<function, Ray>, instance_index: u32) {
     while iteration < max_iterations {
         iteration += 1;
         let node = get_node(node_index, instance_index);
-        if node.primitive_count > 0u {
-            for (var i: u32 = 0u; i < node.primitive_count; i += 1u) {
-                ray_triangle_intersect(ray, get_triangle(node.first_primitive + i, instance_index));
+        if node.tri_count > 0u {
+            for (var i: u32 = 0u; i < node.tri_count; i += 1u) {
+                ray_triangle_intersect(ray, get_triangle(node.a_or_tri + i, instance_index));
             }
             if stack_ptr == 0 {
                 break;
@@ -145,7 +142,7 @@ fn traverse_bvh(ray: ptr<function, Ray>, instance_index: u32) {
             continue;
         }
 
-        var child_a_index = node.child_a_index;
+        var child_a_index = node.a_or_tri;
         var child_b_index = child_a_index + 1u;
         let child_a = get_node(child_a_index, instance_index);
         let child_b = get_node(child_b_index, instance_index);
