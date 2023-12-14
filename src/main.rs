@@ -56,16 +56,16 @@ fn setup(
         // 2, 3, 0,
     ]);
 
-    // // note that we have to include the `Scene0` label
-    // let my_gltf = asset_server.load("suzanne.glb#Scene0");
+    // note that we have to include the `Scene0` label
+    let my_gltf = asset_server.load("suzanne.glb#Scene0");
 
-    // // to position our 3d model, simply use the Transform
-    // // in the SceneBundle
-    // commands.spawn(SceneBundle {
-    //     scene: my_gltf,
-    //     transform: Transform::from_xyz(0.0, 0.0, -5.0),
-    //     ..Default::default()
-    // });
+    // to position our 3d model, simply use the Transform
+    // in the SceneBundle
+    commands.spawn(SceneBundle {
+        scene: my_gltf,
+        transform: Transform::from_xyz(0.0, 0.0, -1.0),
+        ..Default::default()
+    });
 
     let mesh = Mesh::new(PrimitiveTopology::TriangleList)
         .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
@@ -86,19 +86,19 @@ fn setup(
     //     })
     //     .id();
 
-    commands.spawn(PbrBundle {
-        mesh: mesh_assets.add(Mesh::from(shape::Torus {
-            subdivisions_segments: 32,
-            subdivisions_sides: 24,
-            ..default()
-        })),
-        material: mat_assets.add(StandardMaterial {
-            base_color: Color::rgba(1.0, 0.6, 0.0, 1.0),
-            ..default()
-        }),
-        transform: Transform::from_xyz(0.0, 0.0, -1.5),
-        ..default()
-    });
+    // commands.spawn(PbrBundle {
+    //     mesh: mesh_assets.add(Mesh::from(shape::Torus {
+    //         subdivisions_segments: 32,
+    //         subdivisions_sides: 24,
+    //         ..default()
+    //     })),
+    //     material: mat_assets.add(StandardMaterial {
+    //         base_color: Color::rgba(1.0, 0.6, 0.0, 1.0),
+    //         ..default()
+    //     }),
+    //     transform: Transform::from_xyz(0.0, 0.0, -1.5),
+    //     ..default()
+    // });
 
     // Light
     commands.spawn(PointLightBundle {

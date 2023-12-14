@@ -5,11 +5,8 @@ use std::time::Instant;
 #[derive(Default, ShaderType, Clone, Debug)]
 pub struct PulseTLASNode {
     pub aabb_min: Vec3,
+    pub a_or_first_instance: u32,
     pub aabb_max: Vec3,
-    // child_b_idx is always child_a_idx + 1 so don't store it.
-    pub child_a_idx: u32,
-    // Index for tri_indices, not directly for the tri data.
-    pub first_instance: u32,
     pub instance_count: u32,
 }
 

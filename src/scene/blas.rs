@@ -46,24 +46,40 @@ struct Bin {
     tri_count: u32,
 }
 
-pub fn build_blas(tris: &Vec<PulsePrimitive>) -> Blas {
+pub fn build_blas(prims: &Vec<PulsePrimitive>) -> Blas {
     let mut tri_indices: Vec<usize> = vec![];
-    // TODO: Use AABB centers instead of triangle centroids.
     let mut centroids: Vec<Vec3> = vec![];
-    for i in 0..tris.len() {
-        centroids
-            .push((tris[i].positions[0] + tris[i].positions[1] + tris[i].positions[2]) * 0.3333);
+    for i in 0..prims.len() {
+        let mut bounds_min = Vec3::MAX;
+        let mut bounds_max = Vec3::MIN;
+
+        bounds_min = bounds_min.min(prims[i].positions[0]);
+        bounds_min = bounds_min.min(prims[i].positions[1]);
+        bounds_min = bounds_min.min(prims[i].positions[2]);
+
+        bounds_max = bounds_max.max(prims[i].positions[0]);
+        bounds_max = bounds_max.max(prims[i].positions[1]);
+        bounds_max = bounds_max.max(prims[i].positions[2]);
+
+        let center = bounds_min + 0.5 * (bounds_max - bounds_min);
+        centroids.push(center);
+
         tri_indices.push(i);
     }
+    // for i in 0..prims.len() {
+    //     centroids
+    //         .push((prims[i].positions[0] + prims[i].positions[1] + prims[i].positions[2]) * 0.3333);
+    //     tri_indices.push(i);
+    // }
 
     let mut nodes: Vec<PulseBLASNode> = vec![];
     let mut root = PulseBLASNode::default();
     root.a_or_first_tri = 0;
     root.tri_count = tri_indices.len() as u32;
-    calculate_node_aabb(&mut root, tris, &tri_indices);
+    calculate_node_aabb(&mut root, prims, &tri_indices);
     nodes.push(root);
 
-    subdivide(0, &mut nodes, tris, &centroids, &mut tri_indices);
+    subdivide(0, &mut nodes, prims, &centroids, &mut tri_indices);
 
     // Ugly fix. Should already use u32
     let tri_indices = tri_indices.iter().map(|i| *i as u32).collect::<Vec<u32>>();
@@ -78,7 +94,7 @@ pub fn build_blas(tris: &Vec<PulsePrimitive>) -> Blas {
 pub fn subdivide(
     node_idx: usize,
     nodes: &mut Vec<PulseBLASNode>,
-    tris: &Vec<PulsePrimitive>,
+    prims: &Vec<PulsePrimitive>,
     centroids: &Vec<Vec3>,
     tri_indices: &mut Vec<usize>,
 ) {
@@ -87,7 +103,7 @@ pub fn subdivide(
     }
 
     let (axis, split_position, split_cost) =
-        find_best_split_plane(&nodes[node_idx], tris, centroids, tri_indices);
+        find_best_split_plane(&nodes[node_idx], prims, centroids, tri_indices);
 
     let no_split_cost = calculate_node_cost(&nodes[node_idx]);
     if split_cost >= no_split_cost {
@@ -119,14 +135,14 @@ pub fn subdivide(
     let mut child_a = PulseBLASNode::default();
     child_a.a_or_first_tri = nodes[node_idx].a_or_first_tri;
     child_a.tri_count = a_count;
-    calculate_node_aabb(&mut child_a, tris, tri_indices);
+    calculate_node_aabb(&mut child_a, prims, tri_indices);
     let child_a_index = nodes.len() as u32;
     nodes.push(child_a);
 
     let mut child_b = PulseBLASNode::default();
     child_b.a_or_first_tri = i;
     child_b.tri_count = nodes[node_idx].tri_count - a_count;
-    calculate_node_aabb(&mut child_b, tris, tri_indices);
+    calculate_node_aabb(&mut child_b, prims, tri_indices);
     nodes.push(child_b);
 
     nodes[node_idx].a_or_first_tri = child_a_index;
@@ -136,14 +152,14 @@ pub fn subdivide(
     subdivide(
         nodes[node_idx].a_or_first_tri as usize,
         nodes,
-        tris,
+        prims,
         centroids,
         tri_indices,
     );
     subdivide(
         nodes[node_idx].a_or_first_tri as usize + 1,
         nodes,
-        tris,
+        prims,
         centroids,
         tri_indices,
     );
@@ -152,7 +168,7 @@ pub fn subdivide(
 // Returns (axis, position, cost)
 fn find_best_split_plane(
     node: &PulseBLASNode,
-    tris: &Vec<PulsePrimitive>,
+    prims: &Vec<PulsePrimitive>,
     centroids: &Vec<Vec3>,
     tri_indices: &Vec<usize>,
 ) -> (usize, f32, f32) {
@@ -177,7 +193,7 @@ fn find_best_split_plane(
         let mut bins: [Bin; BIN_COUNT] = [Bin::default(); BIN_COUNT];
         let bin_size_inv = BIN_COUNT as f32 / (bounds_max - bounds_min);
         for i in 0..node.tri_count {
-            let triangle = &tris[tri_indices[(node.a_or_first_tri + i) as usize]];
+            let triangle = &prims[tri_indices[(node.a_or_first_tri + i) as usize]];
             let bin_idx = (BIN_COUNT - 1).min(
                 ((centroids[tri_indices[(node.a_or_first_tri + i) as usize]][axis] - bounds_min)
                     * bin_size_inv) as usize,
@@ -245,7 +261,7 @@ fn evaluate_sah(
     node: &PulseBLASNode,
     axis: usize,
     position: f32,
-    tris: &Vec<PulsePrimitive>,
+    prims: &Vec<PulsePrimitive>,
     centroids: &Vec<Vec3>,
     tri_indices: &Vec<usize>,
 ) -> f32 {
@@ -254,7 +270,7 @@ fn evaluate_sah(
     let mut a_count = 0;
     let mut b_count = 0;
     for i in 0..node.tri_count {
-        let triangle = &tris[tri_indices[(node.a_or_first_tri + i) as usize]];
+        let triangle = &prims[tri_indices[(node.a_or_first_tri + i) as usize]];
         let centroid = centroids[tri_indices[(node.a_or_first_tri + i) as usize]];
         if centroid[axis] < position {
             a_count += 1;
@@ -278,7 +294,7 @@ fn evaluate_sah(
 
 fn calculate_node_aabb(
     node: &mut PulseBLASNode,
-    tris: &Vec<PulsePrimitive>,
+    prims: &Vec<PulsePrimitive>,
     tri_indices: &Vec<usize>,
 ) {
     node.aabb_min = Vec3::MAX;
@@ -286,13 +302,13 @@ fn calculate_node_aabb(
     for i in 0..node.tri_count {
         let tri_index = tri_indices[(node.a_or_first_tri + i) as usize];
 
-        node.aabb_min = node.aabb_min.min(tris[tri_index].positions[0]);
-        node.aabb_min = node.aabb_min.min(tris[tri_index].positions[1]);
-        node.aabb_min = node.aabb_min.min(tris[tri_index].positions[2]);
+        node.aabb_min = node.aabb_min.min(prims[tri_index].positions[0]);
+        node.aabb_min = node.aabb_min.min(prims[tri_index].positions[1]);
+        node.aabb_min = node.aabb_min.min(prims[tri_index].positions[2]);
 
-        node.aabb_max = node.aabb_max.max(tris[tri_index].positions[0]);
-        node.aabb_max = node.aabb_max.max(tris[tri_index].positions[1]);
-        node.aabb_max = node.aabb_max.max(tris[tri_index].positions[2]);
+        node.aabb_max = node.aabb_max.max(prims[tri_index].positions[0]);
+        node.aabb_max = node.aabb_max.max(prims[tri_index].positions[1]);
+        node.aabb_max = node.aabb_max.max(prims[tri_index].positions[2]);
     }
 }
 
