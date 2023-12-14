@@ -1,10 +1,13 @@
 // #import pulse::scene_bindings:
 #import bevy_render::view::View
 
-struct PulseTriangle {
+struct PulsePrimitive {
     p0: vec3<f32>,
     p1: vec3<f32>,
     p2: vec3<f32>,
+}
+
+struct PulseTriangleData {
     n0: vec3<f32>,
     n1: vec3<f32>,
     n2: vec3<f32>,
@@ -36,10 +39,11 @@ struct PulseSceneUniform {
 }
 
 @group(0) @binding(0) var<uniform> scene_uniform: PulseSceneUniform;
-@group(0) @binding(1) var<storage> triangles: array<PulseTriangle>;
-@group(0) @binding(2) var<storage> triangle_indices: array<u32>;
-@group(0) @binding(3) var<storage> nodes: array<BVHNode>;
-@group(0) @binding(4) var<storage> instances: array<PulseMeshInstance>;
+@group(0) @binding(1) var<storage> primitives: array<PulsePrimitive>;
+@group(0) @binding(2) var<storage> triangle_data: array<PulseTriangleData>;
+@group(0) @binding(3) var<storage> triangle_indices: array<u32>;
+@group(0) @binding(4) var<storage> nodes: array<BVHNode>;
+@group(0) @binding(5) var<storage> instances: array<PulseMeshInstance>;
 
 @group(1) @binding(0) var<uniform> view: View;
 @group(1) @binding(1) var output_texture: texture_storage_2d<rgba16float, read_write>;
@@ -110,14 +114,28 @@ fn trace_ray(ray: ptr<function, Ray>)  {
 }
 
 fn get_node(index: u32, instance_index: u32) -> BVHNode {
-    let instance = instances[instance_index];
-    return nodes[index + instance.node_offset];
+    // let instance = instances[instance_index];
+    // return nodes[index + instance.node_offset];
+
+    return nodes[index];
 }
 
-fn get_triangle(index: u32, instance_index: u32) -> PulseTriangle {
-    let instance = instances[instance_index];
-    let triangle_index = triangle_indices[index + instance.index_offset];
-    return triangles[triangle_index + instance.triangle_offset];
+fn get_primitive(index: u32, instance_index: u32) -> PulsePrimitive {
+    // let instance = instances[instance_index];
+    // let triangle_index = triangle_indices[index + instance.index_offset];
+    // return triangles[triangle_index + instance.triangle_offset];
+
+    let triangle_index = triangle_indices[index];
+    return primitives[triangle_index];
+}
+
+fn get_triangle_data(index: u32, instance_index: u32) -> PulseTriangleData {
+    // let instance = instances[instance_index];
+    // let triangle_index = triangle_indices[index + instance.index_offset];
+    // return triangles[triangle_index + instance.triangle_offset];
+
+    let triangle_index = triangle_indices[index];
+    return triangle_data[triangle_index];
 }
 
 fn traverse_bvh(ray: ptr<function, Ray>, instance_index: u32) {
@@ -131,7 +149,7 @@ fn traverse_bvh(ray: ptr<function, Ray>, instance_index: u32) {
         let node = get_node(node_index, instance_index);
         if node.tri_count > 0u {
             for (var i: u32 = 0u; i < node.tri_count; i += 1u) {
-                ray_triangle_intersect(ray, get_triangle(node.a_or_tri + i, instance_index));
+                ray_triangle_intersect(ray, node.a_or_tri + i, instance_index);
             }
             if stack_ptr == 0 {
                 break;
@@ -234,16 +252,17 @@ fn ray_sphere_intersect(ray: ptr<function, Ray>, s0: vec3<f32>, sr: f32){
 }
 
 // Updates ray_t if new t is smaller
-fn ray_triangle_intersect(ray: ptr<function, Ray>, tri: PulseTriangle) {
-    let edge_1 = tri.p1 - tri.p0;
-    let edge_2 = tri.p2 - tri.p0;
+fn ray_triangle_intersect(ray: ptr<function, Ray>, triangle_index: u32, instance_index: u32) {
+    let prim = get_primitive(triangle_index, instance_index);
+    let edge_1 = prim.p1 - prim.p0;
+    let edge_2 = prim.p2 - prim.p0;
     let h = cross((*ray).dir, edge_2);
     let a = dot(edge_1, h);
     if a > -0.0001 && a < 0.0001 { // Ray parallel to triangle
         return;
     }
     let f = 1.0 / a;
-    let s = (*ray).origin - tri.p0;
+    let s = (*ray).origin - prim.p0;
     let u = f * dot(s, h);
     if u < 0.0 || u > 1.0 {
         return;
@@ -255,7 +274,8 @@ fn ray_triangle_intersect(ray: ptr<function, Ray>, tri: PulseTriangle) {
     }
     let t = f * dot(edge_2, q);
     if t > 0.001 && (*ray).record.t > t {
+        let tri_data = get_triangle_data(triangle_index, instance_index);
         (*ray).record.t = t;
-        (*ray).record.normal = tri.n0;
+        (*ray).record.normal = tri_data.n0;
     }
 }

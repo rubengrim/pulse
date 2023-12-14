@@ -142,14 +142,19 @@ fn extract_mesh_assets(
 }
 
 #[derive(Default, ShaderType, Clone, Debug)]
-pub struct PulseTriangle {
-    pub positions: [Vec3; 3],
+pub struct PulseTriangleData {
     pub normals: [Vec3; 3],
     pub uvs: [Vec2; 3],
 }
 
+#[derive(Default, ShaderType, Clone, Debug)]
+pub struct PulsePrimitive {
+    pub positions: [Vec3; 3],
+}
+
 pub struct PulseMesh {
-    pub triangles: Vec<PulseTriangle>,
+    pub primitives: Vec<PulsePrimitive>,
+    pub triangle_data: Vec<PulseTriangleData>,
     pub bvh: Blas,
 }
 
@@ -195,29 +200,39 @@ fn prepare_extracted_mesh_assets(
                 return;
             }
         };
-        let mut triangles = vec![];
+        let mut triangle_data = vec![];
+        let mut primitives = vec![];
         for i_0 in 0..(indices.len() / 3) {
             let i_0 = i_0 * 3;
             let v_0 = indices[i_0] as usize;
             let v_1 = indices[i_0 + 1] as usize;
             let v_2 = indices[i_0 + 2] as usize;
-            triangles.push(PulseTriangle {
+            primitives.push(PulsePrimitive {
                 positions: [positions[v_0], positions[v_1], positions[v_2]],
+            });
+            triangle_data.push(PulseTriangleData {
                 normals: [normals[v_0], normals[v_1], normals[v_2]],
                 uvs: [uvs[v_0], uvs[v_1], uvs[v_2]],
             })
         }
 
         let blas_time_begin = Instant::now();
-        let bvh = build_blas(&triangles);
+        let bvh = build_blas(&primitives);
         info!(
             "Built blas for mesh id:{:?} with triangle count {:?} in {:.3?}",
             id,
-            triangles.len(),
+            primitives.len(),
             blas_time_begin.elapsed(),
         );
 
-        meshes.0.insert(id.clone(), PulseMesh { triangles, bvh });
+        meshes.0.insert(
+            id.clone(),
+            PulseMesh {
+                primitives,
+                triangle_data,
+                bvh,
+            },
+        );
     }
 
     for id in extracted.removed.iter() {
@@ -227,7 +242,8 @@ fn prepare_extracted_mesh_assets(
 
 #[derive(Resource, Default)]
 pub struct PulsePreparedMeshAssetData {
-    pub triangles: Vec<PulseTriangle>,
+    pub primitives: Vec<PulsePrimitive>,
+    pub triangle_data: Vec<PulseTriangleData>,
     pub indices: Vec<u32>,
     pub nodes: Vec<PulseBLASNode>,
 }
@@ -258,7 +274,7 @@ fn prepare_mesh_data(
     }
 
     for (id, mesh) in meshes.0.iter() {
-        let triangle_offset = prepared_mesh_data.triangles.len() as u32;
+        let triangle_offset = prepared_mesh_data.primitives.len() as u32;
         let index_offset = prepared_mesh_data.indices.len() as u32;
         let node_offset = prepared_mesh_data.nodes.len() as u32;
 
@@ -271,7 +287,12 @@ fn prepare_mesh_data(
             },
         );
 
-        prepared_mesh_data.triangles.extend(mesh.triangles.clone());
+        prepared_mesh_data
+            .primitives
+            .extend(mesh.primitives.clone());
+        prepared_mesh_data
+            .triangle_data
+            .extend(mesh.triangle_data.clone());
         prepared_mesh_data
             .indices
             .extend(mesh.bvh.tri_indices.clone());
@@ -346,7 +367,7 @@ impl FromWorld for PulseSceneBindGroupLayout {
                     },
                     count: None,
                 },
-                // Triangles
+                // Primitives
                 BindGroupLayoutEntry {
                     binding: 1,
                     visibility: ShaderStages::COMPUTE,
@@ -357,7 +378,7 @@ impl FromWorld for PulseSceneBindGroupLayout {
                     },
                     count: None,
                 },
-                // Triangle indices
+                // Triangle data
                 BindGroupLayoutEntry {
                     binding: 2,
                     visibility: ShaderStages::COMPUTE,
@@ -368,7 +389,7 @@ impl FromWorld for PulseSceneBindGroupLayout {
                     },
                     count: None,
                 },
-                // Nodes
+                // Triangle indices
                 BindGroupLayoutEntry {
                     binding: 3,
                     visibility: ShaderStages::COMPUTE,
@@ -379,9 +400,20 @@ impl FromWorld for PulseSceneBindGroupLayout {
                     },
                     count: None,
                 },
-                // Instances
+                // Nodes
                 BindGroupLayoutEntry {
                     binding: 4,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // Instances
+                BindGroupLayoutEntry {
+                    binding: 5,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Storage { read_only: true },
@@ -423,9 +455,16 @@ fn queue_scene_bind_group(
         &render_queue,
     );
 
-    let triangle_buffer = create_storage_buffer(
-        mesh_data.triangles.clone(),
-        Some("pulse_triangle_buffer"),
+    let primitive_buffer = create_storage_buffer(
+        mesh_data.primitives.clone(),
+        Some("pulse_primitive_buffer"),
+        &render_device,
+        &render_queue,
+    );
+
+    let triangle_data_buffer = create_storage_buffer(
+        mesh_data.triangle_data.clone(),
+        Some("pulse_triangle_data_buffer"),
         &render_device,
         &render_queue,
     );
@@ -463,18 +502,22 @@ fn queue_scene_bind_group(
             },
             BindGroupEntry {
                 binding: 1,
-                resource: triangle_buffer.binding().unwrap(),
+                resource: primitive_buffer.binding().unwrap(),
             },
             BindGroupEntry {
                 binding: 2,
-                resource: triangle_index_buffer.binding().unwrap(),
+                resource: triangle_data_buffer.binding().unwrap(),
             },
             BindGroupEntry {
                 binding: 3,
-                resource: node_buffer.binding().unwrap(),
+                resource: triangle_index_buffer.binding().unwrap(),
             },
             BindGroupEntry {
                 binding: 4,
+                resource: node_buffer.binding().unwrap(),
+            },
+            BindGroupEntry {
+                binding: 5,
                 resource: instance_buffer.binding().unwrap(),
             },
         ],

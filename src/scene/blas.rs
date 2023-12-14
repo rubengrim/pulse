@@ -1,4 +1,4 @@
-use super::PulseTriangle;
+use super::PulsePrimitive;
 use bevy::{prelude::*, render::render_resource::ShaderType};
 
 #[derive(Default, ShaderType, Clone, Debug)]
@@ -46,7 +46,7 @@ struct Bin {
     tri_count: u32,
 }
 
-pub fn build_blas(tris: &Vec<PulseTriangle>) -> Blas {
+pub fn build_blas(tris: &Vec<PulsePrimitive>) -> Blas {
     let mut tri_indices: Vec<usize> = vec![];
     // TODO: Use AABB centers instead of triangle centroids.
     let mut centroids: Vec<Vec3> = vec![];
@@ -78,7 +78,7 @@ pub fn build_blas(tris: &Vec<PulseTriangle>) -> Blas {
 pub fn subdivide(
     node_idx: usize,
     nodes: &mut Vec<PulseBLASNode>,
-    tris: &Vec<PulseTriangle>,
+    tris: &Vec<PulsePrimitive>,
     centroids: &Vec<Vec3>,
     tri_indices: &mut Vec<usize>,
 ) {
@@ -90,14 +90,14 @@ pub fn subdivide(
         find_best_split_plane(&nodes[node_idx], tris, centroids, tri_indices);
 
     let no_split_cost = calculate_node_cost(&nodes[node_idx]);
-    // if split_cost >= no_split_cost {
-    //     // warn!(
-    //     //     "aborting. split: {}, no_split: {}, ",
-    //     //     split_cost,
-    //     //     no_split_cost
-    //     // );
-    //     return;
-    // }
+    if split_cost >= no_split_cost {
+        // warn!(
+        //     "aborting. split: {}, no_split: {}, ",
+        //     split_cost,
+        //     no_split_cost
+        // );
+        return;
+    }
 
     let mut i = nodes[node_idx].a_or_first_tri;
     let mut j = i + nodes[node_idx].tri_count - 1;
@@ -152,7 +152,7 @@ pub fn subdivide(
 // Returns (axis, position, cost)
 fn find_best_split_plane(
     node: &PulseBLASNode,
-    tris: &Vec<PulseTriangle>,
+    tris: &Vec<PulsePrimitive>,
     centroids: &Vec<Vec3>,
     tri_indices: &Vec<usize>,
 ) -> (usize, f32, f32) {
@@ -245,7 +245,7 @@ fn evaluate_sah(
     node: &PulseBLASNode,
     axis: usize,
     position: f32,
-    tris: &Vec<PulseTriangle>,
+    tris: &Vec<PulsePrimitive>,
     centroids: &Vec<Vec3>,
     tri_indices: &Vec<usize>,
 ) -> f32 {
@@ -278,7 +278,7 @@ fn evaluate_sah(
 
 fn calculate_node_aabb(
     node: &mut PulseBLASNode,
-    tris: &Vec<PulseTriangle>,
+    tris: &Vec<PulsePrimitive>,
     tri_indices: &Vec<usize>,
 ) {
     node.aabb_min = Vec3::MAX;
