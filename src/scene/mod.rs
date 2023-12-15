@@ -21,8 +21,8 @@ use std::time::Instant;
 
 pub mod blas;
 use blas::*;
-// pub mod tlas;
-// use tlas::*;
+pub mod tlas;
+use tlas::*;
 
 pub struct PulseScenePlugin;
 
@@ -38,7 +38,7 @@ impl Plugin for PulseScenePlugin {
                 (
                     extract_mesh_assets,
                     extract_mesh_instances,
-                    send_aabbs_to_app_world,
+                    // send_aabbs_to_app_world,
                 ),
             )
             .add_systems(
@@ -58,7 +58,8 @@ impl Plugin for PulseScenePlugin {
             .init_resource::<ExtractedMeshInstances>()
             .init_resource::<PulseMeshIndices>()
             .init_resource::<PulseMeshInstances>()
-            .init_resource::<PulsePreparedMeshAssetData>();
+            .init_resource::<PulsePreparedMeshAssetData>()
+            .init_resource::<PulseSceneTLAS>();
     }
 
     fn finish(&self, app: &mut App) {
@@ -76,25 +77,29 @@ pub fn send_aabbs_to_app_world(
     main_world: ResMut<MainWorld>,
     instances: Res<ExtractedMeshInstances>,
     meshes: Res<PulseMeshes>,
+    tlas: Res<PulseSceneTLAS>,
 ) {
     let mut aabbs = main_world.resource::<AABBsToDraw>().0.lock().unwrap();
     *aabbs = vec![];
-    for (handle, transform) in instances.0.iter() {
-        let Handle::Weak(id) = handle.clone_weak() else {
-            continue;
-        };
-        let transform_mat = transform.compute_matrix();
-        let Some(mesh) = meshes.0.get(&id) else {
-            continue;
-        };
-        for node in &mesh.bvh.nodes {
-            if node.tri_count > 0 {
-                // warn!("tri_count: {}", node.tri_count);
-                let min = transform_pos(transform_mat, node.aabb_min);
-                let max = transform_pos(transform_mat, node.aabb_max);
-                aabbs.push((min, max));
-            }
-        }
+    // for (handle, transform) in instances.0.iter() {
+    //     let Handle::Weak(id) = handle.clone_weak() else {
+    //         continue;
+    //     };
+    //     let transform_mat = transform.compute_matrix();
+    //     let Some(mesh) = meshes.0.get(&id) else {
+    //         continue;
+    //     };
+    //     for node in &mesh.bvh.nodes {
+    //         if node.tri_count > 0 {
+    //             // warn!("tri_count: {}", node.tri_count);
+    //             let min = transform_pos(transform_mat, node.aabb_min);
+    //             let max = transform_pos(transform_mat, node.aabb_max);
+    //             aabbs.push((min, max));
+    //         }
+    //     }
+    // }
+    for node in &tlas.0.nodes {
+        aabbs.push((node.aabb_min, node.aabb_max));
     }
 }
 
@@ -252,11 +257,8 @@ pub struct PulsePreparedMeshAssetData {
 #[derive(ShaderType, Copy, Clone, Debug)]
 pub struct PulseMeshIndex {
     pub triangle_offset: u32,
-    // pub triangle_count: u32,
     pub index_offset: u32,
-    // pub index_count: u32,
     pub node_offset: u32,
-    // pub node_count: u32,
 }
 
 #[derive(Resource, Default)]
@@ -320,16 +322,27 @@ pub struct PulseMeshInstance {
     pub mesh_index: PulseMeshIndex,
 }
 
+pub struct PulsePrimitiveMeshInstance {
+    pub center: Vec3,
+    pub bounds_min: Vec3,
+    pub bounds_max: Vec3,
+}
+
+#[derive(Resource, Default)]
+pub struct PulseSceneTLAS(pub PulseTLAS);
+
 #[derive(Resource, Default, Debug)]
 pub struct PulseMeshInstances(pub Vec<PulseMeshInstance>);
 
 pub fn prepare_mesh_instances(
     extracted: Res<ExtractedMeshInstances>,
     mesh_indices: Res<PulseMeshIndices>,
+    mesh_data: Res<PulsePreparedMeshAssetData>,
     mut mesh_instances: ResMut<PulseMeshInstances>,
+    mut tlas: ResMut<PulseSceneTLAS>,
 ) {
     mesh_instances.0 = vec![];
-    // TODO: Only update instances when added/removed
+    let mut instance_primitives: Vec<PulsePrimitiveMeshInstance> = vec![]; // Used for TLAS creation.
     for (handle, transform) in &extracted.0 {
         let Handle::Weak(id) = handle.clone_weak() else {
             continue;
@@ -343,8 +356,29 @@ pub fn prepare_mesh_instances(
             transform,
             transform_inv,
             mesh_index: mesh_index.clone(),
-        })
+        });
+
+        let root_node = &mesh_data.nodes[mesh_index.node_offset as usize];
+        let center = root_node.aabb_min + 0.5 * (root_node.aabb_max - root_node.aabb_min);
+        let center = transform_pos(transform, center);
+        let bounds_min = transform_pos(transform, root_node.aabb_min);
+        let bounds_max = transform_pos(transform, root_node.aabb_max);
+        instance_primitives.push(PulsePrimitiveMeshInstance {
+            center,
+            bounds_min,
+            bounds_max,
+        });
     }
+
+    let tlas_time_begin = Instant::now();
+    tlas.0 = build_tlas(&instance_primitives);
+    // info!(
+    //     "Built TLAS for {} instances in {:.3?}",
+    //     mesh_instances.0.len(),
+    //     tlas_time_begin.elapsed(),
+    // );
+
+    // info!("{:?}", tlas.0.instance_indices);
 }
 
 #[derive(Resource)]
@@ -400,7 +434,7 @@ impl FromWorld for PulseSceneBindGroupLayout {
                     },
                     count: None,
                 },
-                // Nodes
+                // BLAS nodes
                 BindGroupLayoutEntry {
                     binding: 4,
                     visibility: ShaderStages::COMPUTE,
@@ -411,9 +445,31 @@ impl FromWorld for PulseSceneBindGroupLayout {
                     },
                     count: None,
                 },
-                // Instances
+                // TLAS nodes
                 BindGroupLayoutEntry {
                     binding: 5,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // Instance indices
+                BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // Instances
+                BindGroupLayoutEntry {
+                    binding: 7,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Storage { read_only: true },
@@ -439,6 +495,7 @@ pub struct PulseSceneBindGroup(pub Option<BindGroup>);
 fn queue_scene_bind_group(
     mesh_data: Res<PulsePreparedMeshAssetData>,
     instances: Res<PulseMeshInstances>,
+    tlas: Res<PulseSceneTLAS>,
     mut bind_group: ResMut<PulseSceneBindGroup>,
     layout: Res<PulseSceneBindGroupLayout>,
     render_device: Res<RenderDevice>,
@@ -476,9 +533,23 @@ fn queue_scene_bind_group(
         &render_queue,
     );
 
-    let node_buffer = create_storage_buffer(
+    let blas_node_buffer = create_storage_buffer(
         mesh_data.nodes.clone(),
-        Some("pulse_node_buffer"),
+        Some("pulse_blas_node_buffer"),
+        &render_device,
+        &render_queue,
+    );
+
+    let tlas_node_buffer = create_storage_buffer(
+        tlas.0.nodes.clone(),
+        Some("pulse_tlas_node_buffer"),
+        &render_device,
+        &render_queue,
+    );
+
+    let instance_index_buffer = create_storage_buffer(
+        tlas.0.instance_indices.clone(),
+        Some("pulse_instance_index_buffer"),
         &render_device,
         &render_queue,
     );
@@ -489,8 +560,6 @@ fn queue_scene_bind_group(
         &render_device,
         &render_queue,
     );
-
-    // warn!("{:?}", instances.0.clone());
 
     bind_group.0 = Some(render_device.create_bind_group(
         Some("pulse_scene_bind_group"),
@@ -514,10 +583,18 @@ fn queue_scene_bind_group(
             },
             BindGroupEntry {
                 binding: 4,
-                resource: node_buffer.binding().unwrap(),
+                resource: blas_node_buffer.binding().unwrap(),
             },
             BindGroupEntry {
                 binding: 5,
+                resource: tlas_node_buffer.binding().unwrap(),
+            },
+            BindGroupEntry {
+                binding: 6,
+                resource: instance_index_buffer.binding().unwrap(),
+            },
+            BindGroupEntry {
+                binding: 7,
                 resource: instance_buffer.binding().unwrap(),
             },
         ],

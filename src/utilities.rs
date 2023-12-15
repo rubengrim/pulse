@@ -47,3 +47,10 @@ pub fn transform_pos(m: Mat4, v: Vec3) -> Vec3 {
 pub fn transform_dir(m: Mat4, v: Vec3) -> Vec3 {
     m.mul_vec4(Vec4::new(v.x, v.y, v.z, 0.0)).xyz()
 }
+
+pub fn swap<T: Clone>(data: &mut [T], i0: usize, i1: usize) {
+    // TODO: Error handling
+    let val0 = data[i0].clone();
+    data[i0] = data[i1].clone();
+    data[i1] = val0;
+}

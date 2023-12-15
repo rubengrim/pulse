@@ -56,35 +56,57 @@ fn setup(
         // 2, 3, 0,
     ]);
 
-    // note that we have to include the `Scene0` label
-    let my_gltf = asset_server.load("suzanne.glb#Scene0");
-
-    // to position our 3d model, simply use the Transform
-    // in the SceneBundle
-    commands.spawn(SceneBundle {
-        scene: my_gltf,
-        transform: Transform::from_xyz(0.0, 0.0, -1.0),
-        ..Default::default()
-    });
-
     let mesh = Mesh::new(PrimitiveTopology::TriangleList)
         .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
         .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
         .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
         .with_indices(Some(indices));
 
+    // let m = mesh_assets.add(mesh);
     // commands.spawn(PbrBundle {
-    //     mesh: mesh_assets.add(mesh),
+    //     mesh: m.clone(),
     //     ..default()
     // });
 
-    // let camera_target = commands
-    //     .spawn(PbrBundle {
-    //         mesh: mesh_assets.add(Mesh::from(shape::Cube { size: 1.0 })),
-    //         transform: Transform::from_scale(Vec3::new(0.0, 0.0, 1.0)),
-    //         ..default()
-    //     })
-    //     .id();
+    // commands.spawn(PbrBundle {
+    //     mesh: m,
+    //     transform: Transform::from_xyz(1.0, 0.0, -4.0),
+    //     ..default()
+    // });
+
+    // note that we have to include the `Scene0` label
+    let monkey = asset_server.load("suzanne.glb#Scene0");
+
+    let step_size = 3.0;
+    let resolution = 100;
+    for x in 0..resolution {
+        for z in 0..resolution {
+            let transform = Transform::from_xyz(x as f32 * step_size, 0.0, z as f32 * step_size);
+            commands.spawn(SceneBundle {
+                scene: monkey.clone(),
+                transform,
+                ..Default::default()
+            });
+        }
+    }
+
+    // commands.spawn(SceneBundle {
+    //     scene: my_gltf,
+    //     transform: Transform::from_xyz(-4.0, 0.0, -1.0),
+    //     ..Default::default()
+    // });
+
+    // commands.spawn(PbrBundle {
+    //     mesh: mesh_assets.add(Mesh::from(shape::Cube { size: 1.0 })),
+    //     transform: Transform::from_translation(Vec3::new(2.0, 0.0, -3.0)),
+    //     ..default()
+    // });
+
+    // commands.spawn(PbrBundle {
+    //     mesh: mesh_assets.add(Mesh::from(shape::Cube { size: 1.0 })),
+    //     transform: Transform::from_translation(Vec3::new(-2.0, 0.0, -3.0)),
+    //     ..default()
+    // });
 
     // commands.spawn(PbrBundle {
     //     mesh: mesh_assets.add(Mesh::from(shape::Torus {

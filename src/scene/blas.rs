@@ -1,4 +1,5 @@
 use super::PulsePrimitive;
+use crate::utilities::*;
 use bevy::{prelude::*, render::render_resource::ShaderType};
 
 #[derive(Default, ShaderType, Clone, Debug)]
@@ -19,8 +20,8 @@ pub struct Blas {
 
 #[derive(Default, Copy, Clone)]
 pub struct AABB {
-    min: Vec3,
-    max: Vec3,
+    pub min: Vec3,
+    pub max: Vec3,
 }
 
 impl AABB {
@@ -38,12 +39,6 @@ impl AABB {
         let e = self.max - self.min;
         e.x * e.y + e.y * e.z + e.z * e.x
     }
-}
-
-#[derive(Default, Copy, Clone)]
-struct Bin {
-    bounds: AABB,
-    tri_count: u32,
 }
 
 pub fn build_blas(prims: &Vec<PulsePrimitive>) -> Blas {
@@ -105,15 +100,15 @@ pub fn subdivide(
     let (axis, split_position, split_cost) =
         find_best_split_plane(&nodes[node_idx], prims, centroids, tri_indices);
 
-    let no_split_cost = calculate_node_cost(&nodes[node_idx]);
-    if split_cost >= no_split_cost {
-        // warn!(
-        //     "aborting. split: {}, no_split: {}, ",
-        //     split_cost,
-        //     no_split_cost
-        // );
-        return;
-    }
+    // let no_split_cost = calculate_node_cost(&nodes[node_idx]);
+    // if split_cost >= no_split_cost {
+    //     // warn!(
+    //     //     "aborting. split: {}, no_split: {}, ",
+    //     //     split_cost,
+    //     //     no_split_cost
+    //     // );
+    //     return;
+    // }
 
     let mut i = nodes[node_idx].a_or_first_tri;
     let mut j = i + nodes[node_idx].tri_count - 1;
@@ -163,6 +158,12 @@ pub fn subdivide(
         centroids,
         tri_indices,
     );
+}
+
+#[derive(Default, Copy, Clone)]
+struct Bin {
+    bounds: AABB,
+    tri_count: u32,
 }
 
 // Returns (axis, position, cost)
@@ -310,11 +311,4 @@ fn calculate_node_aabb(
         node.aabb_max = node.aabb_max.max(prims[tri_index].positions[1]);
         node.aabb_max = node.aabb_max.max(prims[tri_index].positions[2]);
     }
-}
-
-pub fn swap<T: Clone>(data: &mut [T], i0: usize, i1: usize) {
-    // TODO: Error handling
-    let val0 = data[i0].clone();
-    data[i0] = data[i1].clone();
-    data[i1] = val0;
 }
