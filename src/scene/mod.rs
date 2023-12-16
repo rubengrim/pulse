@@ -1,3 +1,4 @@
+use crate::profiling::*;
 use crate::utilities::*;
 use bevy::{
     asset::load_internal_asset,
@@ -340,6 +341,7 @@ pub fn prepare_mesh_instances(
     mesh_data: Res<PulsePreparedMeshAssetData>,
     mut mesh_instances: ResMut<PulseMeshInstances>,
     mut tlas: ResMut<PulseSceneTLAS>,
+    mut profiling: ResMut<RenderWorldProfilingEntries>,
 ) {
     mesh_instances.0 = vec![];
     let mut instance_primitives: Vec<PulsePrimitiveMeshInstance> = vec![]; // Used for TLAS creation.
@@ -372,6 +374,10 @@ pub fn prepare_mesh_instances(
 
     let tlas_time_begin = Instant::now();
     tlas.0 = build_tlas(&instance_primitives);
+    profiling.add_entry(
+        "Build TLAS".into(),
+        format!("{:.3?}", tlas_time_begin.elapsed()),
+    )
     // info!(
     //     "Built TLAS for {} instances in {:.3?}",
     //     mesh_instances.0.len(),
