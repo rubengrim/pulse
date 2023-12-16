@@ -1,12 +1,13 @@
 use bevy::{
-    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
+    diagnostic::{
+        FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin, SystemInformationDiagnosticsPlugin,
+    },
     prelude::*,
     render::{
         camera::CameraRenderGraph,
         mesh::{Indices, PrimitiveTopology},
     },
 };
-// use bevy_flycam::prelude::*;
 use bevy_camera_operator::*;
 use pulse::{path_tracer::*, PulsePlugin, PULSE_GRAPH};
 
@@ -16,22 +17,18 @@ fn main() {
     let mut app = App::new();
     app.add_plugins((
         DefaultPlugins,
-        // PulsePlugin,
-        // PulsePathTracerPlugin,
-        // CameraControllerPlugin,
-        // FrameTimeDiagnosticsPlugin,
+        PulsePlugin,
+        PulsePathTracerPlugin,
+        CameraControllerPlugin,
+        FrameTimeDiagnosticsPlugin,
+        SystemInformationDiagnosticsPlugin,
         // LogDiagnosticsPlugin::default(),
     ))
     .add_systems(Startup, setup)
     .run();
 }
 
-fn setup(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut mesh_assets: ResMut<Assets<Mesh>>,
-    mut mat_assets: ResMut<Assets<StandardMaterial>>,
-) {
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     // suppose Y-up right hand, and camera look from +z to -z
     let vertices = &[
         // Plane
@@ -56,7 +53,7 @@ fn setup(
         // 2, 3, 0,
     ]);
 
-    let mesh = Mesh::new(PrimitiveTopology::TriangleList)
+    let _mesh = Mesh::new(PrimitiveTopology::TriangleList)
         .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
         .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
         .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)

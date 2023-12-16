@@ -1,9 +1,12 @@
 use bevy::{
-    diagnostic::{Diagnostic, DiagnosticsStore},
+    diagnostic::{Diagnostic, DiagnosticsStore, MAX_DIAGNOSTIC_NAME_WIDTH},
     prelude::*,
     render::{MainWorld, RenderApp},
 };
-use bevy_egui::{egui, EguiContexts, EguiPlugin};
+use bevy_egui::{
+    egui::{self, epaint::Shadow, Color32, Frame, Layout, Margin, RichText, Stroke, Style},
+    EguiContexts, EguiPlugin,
+};
 use std::sync::Mutex;
 
 pub struct PulseDiagnosticsPlugin;
@@ -35,7 +38,7 @@ fn transfer_render_world_diagnostics(
         .lock()
         .unwrap();
 
-    *intermediate = diagnostics.iter().map(|d| d.clone()).collect::<Vec<_>>();
+    *intermediate = diagnostics.iter().map(|d| (*d).clone()).collect::<Vec<_>>();
 }
 
 fn merge_diagnostics(
@@ -48,14 +51,71 @@ fn merge_diagnostics(
 }
 
 fn display_diagnostics(mut contexts: EguiContexts, diagnostics: Res<DiagnosticsStore>) {
-    egui::Window::new("Diagnostics").show(contexts.ctx_mut(), |ui| {
-        for diagnostic in diagnostics.iter() {
-            if let Some(value) = diagnostic.smoothed() {
-                ui.monospace(format!(
-                    "{}: {}{}",
-                    diagnostic.name, value, diagnostic.suffix
-                ));
-            }
-        }
-    });
+    let frame = Frame {
+        inner_margin: Margin::symmetric(2.0, 6.0),
+        rounding: egui::Rounding::from(1.0),
+        fill: Color32::from_rgba_premultiplied(0, 0, 0, 210),
+        ..default()
+    };
+    egui::Window::new("Diagnostics")
+        .frame(frame)
+        .title_bar(false)
+        .interactable(false)
+        .movable(true)
+        .show(contexts.ctx_mut(), |ui| {
+            egui::Grid::new("my_grid")
+                .num_columns(2)
+                .striped(true)
+                .show(ui, |ui| {
+                    for diagnostic in diagnostics.iter() {
+                        if let (Some(value), Some(_avg)) =
+                            (diagnostic.smoothed(), diagnostic.average())
+                        {
+                            ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                                ui.label(
+                                    RichText::new(format!("{}:", diagnostic.name))
+                                        .monospace()
+                                        .strong()
+                                        .size(12.0)
+                                        .color(Color32::WHITE),
+                                );
+                            });
+
+                            ui.label(
+                                RichText::new(format!(
+                                    "{value:.3}{suffix}",
+                                    suffix = diagnostic.suffix,
+                                ))
+                                .monospace()
+                                .size(12.0)
+                                .color(Color32::WHITE),
+                            );
+
+                            // if diagnostic.get_max_history_length() > 1 {
+                            //     ui.label(
+                            //         RichText::new(format!(
+                            //             "{value:.3}{suffix} [{avg:.3}{suffix} moving average]",
+                            //             suffix = diagnostic.suffix,
+                            //         ))
+                            //         .monospace()
+                            //         .size(12.0)
+                            //         .color(Color32::WHITE),
+                            //     );
+                            // } else {
+                            //     ui.label(
+                            //         RichText::new(format!(
+                            //             "{value:.3}{suffix}",
+                            //             suffix = diagnostic.suffix,
+                            //         ))
+                            //         .monospace()
+                            //         .size(12.0)
+                            //         .color(Color32::WHITE),
+                            //     );
+                            // }
+
+                            ui.end_row();
+                        }
+                    }
+                });
+        });
 }

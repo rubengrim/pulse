@@ -1,6 +1,7 @@
 use crate::utilities::*;
 use bevy::{
     asset::load_internal_asset,
+    diagnostic::{Diagnostic, DiagnosticId, Diagnostics, DiagnosticsStore, RegisterDiagnostic},
     prelude::*,
     render::{
         camera::{CameraRenderGraph, ExtractedCamera},
@@ -23,6 +24,9 @@ pub mod blas;
 use blas::*;
 pub mod tlas;
 use tlas::*;
+
+pub const TLAS_BUILD_TIME: DiagnosticId =
+    DiagnosticId::from_u128(178146834822086073791974408528866909483);
 
 pub struct PulseScenePlugin;
 
@@ -51,6 +55,12 @@ impl Plugin for PulseScenePlugin {
                     .in_set(RenderSet::Prepare),
             )
             .add_systems(Render, queue_scene_bind_group.in_set(RenderSet::Queue));
+
+        render_app.register_diagnostic(
+            Diagnostic::new(TLAS_BUILD_TIME, "tlas_build_time", 20)
+                .with_suffix("ms")
+                .with_smoothing_factor(0.0),
+        );
 
         render_app
             .init_resource::<ExtractedMeshAssets>()
@@ -340,6 +350,7 @@ pub fn prepare_mesh_instances(
     mesh_data: Res<PulsePreparedMeshAssetData>,
     mut mesh_instances: ResMut<PulseMeshInstances>,
     mut tlas: ResMut<PulseSceneTLAS>,
+    mut diagnostics: Diagnostics,
 ) {
     mesh_instances.0 = vec![];
     let mut instance_primitives: Vec<PulsePrimitiveMeshInstance> = vec![]; // Used for TLAS creation.
@@ -372,6 +383,9 @@ pub fn prepare_mesh_instances(
 
     let tlas_time_begin = Instant::now();
     tlas.0 = build_tlas(&instance_primitives);
+    diagnostics.add_measurement(TLAS_BUILD_TIME, || {
+        tlas_time_begin.elapsed().as_secs_f64() * 1000.0
+    });
 }
 
 #[derive(Resource)]
