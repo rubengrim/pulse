@@ -172,7 +172,7 @@ fn find_best_split_plane(
         }
 
         // Create bins
-        const BIN_COUNT: usize = 20;
+        const BIN_COUNT: usize = 2;
         let mut bins: [Bin; BIN_COUNT] = [Bin::default(); BIN_COUNT];
         let bin_size_inv = BIN_COUNT as f32 / (bounds_max - bounds_min);
         for i in 0..node.instance_count {

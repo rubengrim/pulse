@@ -16,11 +16,11 @@ fn main() {
     let mut app = App::new();
     app.add_plugins((
         DefaultPlugins,
-        PulsePlugin,
-        PulsePathTracerPlugin,
-        CameraControllerPlugin,
-        FrameTimeDiagnosticsPlugin,
-        LogDiagnosticsPlugin::default(),
+        // PulsePlugin,
+        // PulsePathTracerPlugin,
+        // CameraControllerPlugin,
+        // FrameTimeDiagnosticsPlugin,
+        // LogDiagnosticsPlugin::default(),
     ))
     .add_systems(Startup, setup)
     .run();
@@ -78,7 +78,7 @@ fn setup(
     let monkey = asset_server.load("suzanne.glb#Scene0");
 
     let step_size = 3.0;
-    let resolution = 10;
+    let resolution = 100;
     for x in 0..resolution {
         for z in 0..resolution {
             let transform = Transform::from_xyz(x as f32 * step_size, 0.0, z as f32 * step_size);

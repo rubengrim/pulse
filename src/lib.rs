@@ -12,14 +12,14 @@ use bevy::{
 };
 use std::sync::Mutex;
 
+pub mod diagnostics;
 pub mod path_tracer;
-pub mod profiling;
 pub mod scene;
 pub mod upscaling;
 pub mod utilities;
 
+use diagnostics::*;
 use path_tracer::*;
-use profiling::*;
 use scene::*;
 use upscaling::*;
 use utilities::*;
@@ -30,7 +30,11 @@ pub struct PulsePlugin;
 
 impl Plugin for PulsePlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((PulseUpscalingPlugin, PulseScenePlugin, PulseProfilingPlugin));
+        app.add_plugins((
+            PulseUpscalingPlugin,
+            PulseScenePlugin,
+            PulseDiagnosticsPlugin,
+        ));
     }
 
     fn finish(&self, app: &mut App) {
