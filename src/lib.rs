@@ -31,8 +31,8 @@ pub struct PulsePlugin;
 impl Plugin for PulsePlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((
-            PulseUpscalingPlugin,
             PulseScenePlugin,
+            PulseUpscalingPlugin,
             PulseDiagnosticsPlugin,
         ));
     }
@@ -40,18 +40,18 @@ impl Plugin for PulsePlugin {
     fn finish(&self, app: &mut App) {
         let render_app = app.sub_app_mut(RenderApp);
 
-        let required_features = WgpuFeatures::TIMESTAMP_QUERY;
-        match render_app.world.get_resource::<RenderDevice>() {
-            Some(render_device) => {
-                if !render_device.features().contains(required_features) {
-                    error!("All required wgpu features are not supported");
-                    return;
-                }
-            }
-            _ => {
-                warn!("RenderDevice not found");
-            }
-        }
+        // let required_features = WgpuFeatures::TIMESTAMP_QUERY;
+        // match render_app.world.get_resource::<RenderDevice>() {
+        //     Some(render_device) => {
+        //         if !render_device.features().contains(required_features) {
+        //             error!("All required wgpu features are not supported");
+        //             return;
+        //         }
+        //     }
+        //     _ => {
+        //         warn!("RenderDevice not found");
+        //     }
+        // }
 
         render_app
             .add_render_sub_graph(PULSE_GRAPH)

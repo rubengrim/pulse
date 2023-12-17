@@ -163,15 +163,22 @@ fn get_triangle_data(index: u32, instance_index: u32) -> TriangleData {
 }
 
 fn traverse_tlas(ray: ptr<function, Ray>) {
+    // Abort on empty/invalid root node.
+    if tlas_nodes[0].a_or_first_instance == 0u && tlas_nodes[0].instance_count == 0u {
+        return;
+    }
+
     var node_index = 0u;
-    var stack: array<u32, 64>;
+    var stack: array<u32, 32>;
     var stack_ptr = 0;
     var iteration = 0;
     let max_iterations = 100000;
     while iteration < max_iterations {
         iteration += 1;
         let node = tlas_nodes[node_index];
-        if node.instance_count > 0u {
+
+
+        if node.instance_count > 0u { // Is leaf node.
             for (var i: u32 = 0u; i < node.instance_count; i += 1u) {
                 let instance_index = instance_indices[node.a_or_first_instance + i];
                 traverse_blas(ray, instance_index);
@@ -230,7 +237,7 @@ fn traverse_blas(ray: ptr<function, Ray>, instance_index: u32) {
     // ray_object.dir = (instance.world_object * vec4f(ray_object.dir, 0.0)).xyz;
 
     var node_index = 0u;
-    var stack: array<u32, 64>;
+    var stack: array<u32, 32>;
     var stack_ptr = 0;
     var iteration = 0;
     let max_iterations = 100000;

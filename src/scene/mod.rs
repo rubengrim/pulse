@@ -234,7 +234,7 @@ fn prepare_extracted_mesh_assets(
         let blas_time_begin = Instant::now();
         let bvh = build_blas(&primitives);
         info!(
-            "Built blas for mesh id:{:?} with triangle count {:?} in {:.3?}",
+            "Built BLAS for mesh id:{:?} with triangle count {:?} in {:.3?}",
             id,
             primitives.len(),
             blas_time_begin.elapsed(),

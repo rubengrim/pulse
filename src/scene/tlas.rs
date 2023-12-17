@@ -10,6 +10,17 @@ pub struct PulseTLASNode {
     pub instance_count: u32,
 }
 
+impl PulseTLASNode {
+    fn invalid() -> Self {
+        // A valid TLAS node can never be an interior node with a child node at index 0.
+        Self {
+            a_or_first_instance: 0,
+            instance_count: 0,
+            ..default()
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct PulseTLAS {
     pub nodes: Vec<PulseTLASNode>,
@@ -17,6 +28,13 @@ pub struct PulseTLAS {
 }
 
 pub fn build_tlas(instances: &Vec<PulsePrimitiveMeshInstance>) -> PulseTLAS {
+    if instances.len() == 0 {
+        return PulseTLAS {
+            nodes: vec![PulseTLASNode::invalid()],
+            instance_indices: vec![0],
+        };
+    }
+
     let mut instance_indices = vec![];
     for i in 0..instances.len() {
         instance_indices.push(i);

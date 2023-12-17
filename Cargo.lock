@@ -354,6 +354,7 @@ name = "bevy"
 version = "0.12.1"
 source = "git+https://github.com/rubengrim/bevy?branch=pulse#a62692b50c0c7b426f9af37cea553a7e7505874d"
 dependencies = [
+ "bevy_dylib",
  "bevy_internal",
 ]
 
@@ -525,6 +526,14 @@ dependencies = [
  "bevy_time",
  "bevy_utils",
  "sysinfo",
+]
+
+[[package]]
+name = "bevy_dylib"
+version = "0.12.1"
+source = "git+https://github.com/rubengrim/bevy?branch=pulse#a62692b50c0c7b426f9af37cea553a7e7505874d"
+dependencies = [
+ "bevy_internal",
 ]
 
 [[package]]

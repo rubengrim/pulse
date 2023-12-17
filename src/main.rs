@@ -9,26 +9,36 @@ use bevy::{
     },
 };
 use bevy_camera_operator::*;
-use pulse::{path_tracer::*, PulsePlugin, PULSE_GRAPH};
+use pulse::{diagnostics::PulseDiagnosticsPlugin, path_tracer::*, PulsePlugin, PULSE_GRAPH};
 
 pub const RENDER_WITH_PULSE: bool = true;
 
 fn main() {
     let mut app = App::new();
     app.add_plugins((
-        DefaultPlugins,
+        DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                present_mode: bevy::window::PresentMode::Immediate,
+                ..default()
+            }),
+            ..default()
+        }),
         PulsePlugin,
         PulsePathTracerPlugin,
         CameraControllerPlugin,
         FrameTimeDiagnosticsPlugin,
-        SystemInformationDiagnosticsPlugin,
+        // SystemInformationDiagnosticsPlugin,
         // LogDiagnosticsPlugin::default(),
     ))
     .add_systems(Startup, setup)
     .run();
 }
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn setup(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut mesh_assets: ResMut<Assets<Mesh>>,
+) {
     // suppose Y-up right hand, and camera look from +z to -z
     let vertices = &[
         // Plane
@@ -75,7 +85,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     let monkey = asset_server.load("suzanne.glb#Scene0");
 
     let step_size = 3.0;
-    let resolution = 100;
+    let resolution = 1;
     for x in 0..resolution {
         for z in 0..resolution {
             let transform = Transform::from_xyz(x as f32 * step_size, 0.0, z as f32 * step_size);
@@ -93,11 +103,11 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     //     ..Default::default()
     // });
 
-    // commands.spawn(PbrBundle {
-    //     mesh: mesh_assets.add(Mesh::from(shape::Cube { size: 1.0 })),
-    //     transform: Transform::from_translation(Vec3::new(2.0, 0.0, -3.0)),
-    //     ..default()
-    // });
+    commands.spawn(PbrBundle {
+        mesh: mesh_assets.add(Mesh::from(shape::Cube { size: 1.0 })),
+        transform: Transform::from_translation(Vec3::new(2.0, 0.0, -3.0)),
+        ..default()
+    });
 
     // commands.spawn(PbrBundle {
     //     mesh: mesh_assets.add(Mesh::from(shape::Cube { size: 1.0 })),
