@@ -80,10 +80,10 @@ fn setup(
     // });
 
     // note that we have to include the `Scene0` label
-    let monkey = asset_server.load("suzanne.glb#Scene0");
+    let monkey = asset_server.load("monkey_smooth.glb#Scene0");
 
     let step_size = 3.0;
-    let resolution = 1;
+    let resolution = 20;
     for x in 0..resolution {
         for z in 0..resolution {
             let transform = Transform::from_xyz(x as f32 * step_size, 0.0, z as f32 * step_size);
@@ -166,6 +166,6 @@ fn setup(
 
 pub fn update_meshes(mut meshes_q: Query<&mut Transform, With<Handle<Mesh>>>) {
     for mut transform in meshes_q.iter_mut() {
-        transform.rotate(Quat::from_euler(EulerRot::XYZ, 0.01, 0.0, 0.0));
+        transform.rotate(Quat::from_euler(EulerRot::XYZ, 0.007, 0.002, 0.002));
     }
 }

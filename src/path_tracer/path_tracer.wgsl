@@ -96,7 +96,7 @@ fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
         let t_idx = triangle_indices[instance.index_offset + ray.record.triangle_index];
         let t = triangle_data[instance.triangle_offset + t_idx];
         let w = 1.0 - (ray.record.u + ray.record.v);
-        let normal_interpolated = ray.record.u * t.n0 + ray.record.v * t.n1 + w * t.n2;
+        let normal_interpolated = w * t.n0 + ray.record.u * t.n1 + ray.record.v * t.n2;
         let normal_world = normalize(transform_direction(instance.object_world, normal_interpolated));
         let hit_position_world = transform_position(instance.object_world, ray.origin + ray.record.t * ray.dir);
 
