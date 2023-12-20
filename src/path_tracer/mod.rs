@@ -8,7 +8,6 @@ use bevy::{
         render_resource::*,
         renderer::RenderDevice,
         texture::TextureCache,
-        view::ViewUniforms,
         Render, RenderApp, RenderSet,
     },
 };

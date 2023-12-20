@@ -1,14 +1,9 @@
-use crate::{create_render_target_layout, PulseRenderTarget};
+use crate::create_render_target_layout;
 
 use super::PULSE_UPSCALING_SHADER_HANDLE;
 use bevy::{
     prelude::*,
-    render::{
-        camera::ExtractedCamera,
-        render_resource::*,
-        renderer::RenderDevice,
-        view::{ViewTarget, ViewUniform},
-    },
+    render::{camera::ExtractedCamera, render_resource::*, renderer::RenderDevice},
 };
 
 #[derive(Resource)]

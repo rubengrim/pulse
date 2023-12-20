@@ -1,6 +1,5 @@
 use super::*;
-use bevy::{prelude::*, render::render_resource::ShaderType};
-use std::time::Instant;
+use bevy::render::render_resource::ShaderType;
 
 #[derive(Default, ShaderType, Clone, Debug)]
 pub struct PulseTLASNode {
@@ -31,7 +30,7 @@ pub fn build_tlas(instances: &Vec<PulsePrimitiveMeshInstance>) -> PulseTLAS {
     if instances.len() == 0 {
         return PulseTLAS {
             nodes: vec![PulseTLASNode::invalid()],
-            instance_indices: vec![0],
+            instance_indices: vec![],
         };
     }
 

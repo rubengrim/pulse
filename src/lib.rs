@@ -1,5 +1,4 @@
 use bevy::{
-    asset::load_internal_asset,
     prelude::*,
     render::{
         render_graph::{RenderGraphApp, ViewNodeRunner},
@@ -7,10 +6,9 @@ use bevy::{
         renderer::{RenderDevice, RenderQueue},
         texture::{CachedTexture, TextureCache},
         view::ViewTarget,
-        Render, RenderApp, RenderSet,
+        RenderApp,
     },
 };
-use std::sync::Mutex;
 
 pub mod diagnostics;
 pub mod path_tracer;
@@ -31,9 +29,9 @@ pub struct PulsePlugin;
 impl Plugin for PulsePlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((
+            PulseDiagnosticsPlugin,
             PulseScenePlugin,
             PulseUpscalingPlugin,
-            PulseDiagnosticsPlugin,
         ));
     }
 

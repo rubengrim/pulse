@@ -60,13 +60,16 @@ struct SceneUniform {
 struct Ray {
     origin: vec3f,
     dir: vec3f,
-    record: ObjectHitRecord,
+    record: RayHitRecord,
 }
 
-struct ObjectHitRecord {
+struct RayHitRecord {
     t: f32,
-    normal: vec3f,
     instance_index: u32,
+    triangle_index: u32,
+    // Barycentric coordinates of hit position
+    u: f32,
+    v: f32,
 }
 
 @compute @workgroup_size(16, 16, 1)
@@ -79,11 +82,9 @@ fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
     ray.origin = view.world_position;
     ray.dir = normalize((ray_target.xyz / ray_target.w) - ray.origin);
     let t_far = 1e30;
-    ray.record = ObjectHitRecord(t_far, vec3f(0.0, 0.0, 0.0), 0u);
+    ray.record = RayHitRecord(t_far, 0u, 0u, 0.0, 0.0);
 
     var color_out: vec4<f32>;
-    let light_position = vec3<f32>(2.0, 5.0, 1.0);
-    let light_strength = 15.0;
     trace_ray_tlas(&ray);
     // trace_ray(&ray);
     if ray.record.t < 0.1 || ray.record.t >= t_far  {
@@ -91,14 +92,21 @@ fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
         color_out = vec4<f32>(0.0, 0.3, 0.3, 1.0);
     } else {
         // Hit
-        // Transform ray back to world space.
-        let hit_position_h = instances[ray.record.instance_index].object_world * vec4f(ray.origin + ray.record.t * ray.dir, 1.0);
-        let hit_position = hit_position_h.xyz / hit_position_h.w;
-        var normal = normalize((instances[ray.record.instance_index].object_world * vec4f(ray.record.normal, 0.0)).xyz);
-        let to_light = light_position - hit_position;
-        let f = dot(normalize(to_light), normal);
+        let instance = instances[ray.record.instance_index];
+        let t_idx = triangle_indices[instance.index_offset + ray.record.triangle_index];
+        let t = triangle_data[instance.triangle_offset + t_idx];
+        let w = 1.0 - (ray.record.u + ray.record.v);
+        let normal_interpolated = ray.record.u * t.n0 + ray.record.v * t.n1 + w * t.n2;
+        let normal_world = normalize(transform_direction(instance.object_world, normal_interpolated));
+        let hit_position_world = transform_position(instance.object_world, ray.origin + ray.record.t * ray.dir);
+
+        let light_position = vec3<f32>(2.0, 5.0, 1.0);
+        let light_strength = 15.0;
+        // let to_light = light_position - hit_position_world;
+        let to_light = vec3f(0.0, 1.0, 0.0);
+        let f = dot(normalize(to_light), normal_world);
         color_out = vec4<f32>(f * vec3<f32>(1.0, 0.0, 0.0), 1.0);
-        color_out *= light_strength / dot(to_light, to_light);
+        // color_out *= light_strength / dot(to_light, to_light);
     }
   
     textureStore(output_texture, id.xy, color_out);
@@ -323,34 +331,36 @@ fn ray_aabb_intersect(ray: ptr<function, Ray>, aabb_min: vec3<f32>, aabb_max: ve
     }
 }
 
-fn ray_sphere_intersect(ray: ptr<function, Ray>, s0: vec3<f32>, sr: f32){
-    // let t = 1.0;
-    // (*ray).record.t = t;
-    // let hit_pos = (*ray).origin + t * (*ray).dir;
-    // (*ray).record.normal = normalize(hit_pos - s0);
+// fn ray_sphere_intersect(ray: ptr<function, Ray>, s0: vec3<f32>, sr: f32){
+//     // let t = 1.0;
+//     // (*ray).record.t = t;
+//     // let hit_pos = (*ray).origin + t * (*ray).dir;
+//     // (*ray).record.normal = normalize(hit_pos - s0);
 
-    let a = dot((*ray).dir, (*ray).dir);
-    let s0_r0 = (*ray).origin - s0;
-    let b = 2.0 * dot((*ray).dir, s0_r0);
-    let c = dot(s0_r0, s0_r0) - (sr * sr);
-    if (b*b - 4.0*a*c >= 0.0) {
-        let t = (-b - sqrt((b*b) - 4.0*a*c))/(2.0*a);
-        if (t > 0.001 && (*ray).record.t > t) {
-            (*ray).record.t = t;
-            let hit_pos = (*ray).origin + t * (*ray).dir;
-            (*ray).record.normal = normalize(hit_pos - s0);
-        }
-    }
-}
+//     let a = dot((*ray).dir, (*ray).dir);
+//     let s0_r0 = (*ray).origin - s0;
+//     let b = 2.0 * dot((*ray).dir, s0_r0);
+//     let c = dot(s0_r0, s0_r0) - (sr * sr);
+//     if (b*b - 4.0*a*c >= 0.0) {
+//         let t = (-b - sqrt((b*b) - 4.0*a*c))/(2.0*a);
+//         if (t > 0.001 && (*ray).record.t > t) {
+//             (*ray).record.t = t;
+//             let hit_pos = (*ray).origin + t * (*ray).dir;
+//             (*ray).record.normal = normalize(hit_pos - s0);
+//         }
+//     }
+// }
 
-// Updates ray_t if new t is smaller
+// Moeller-Trumbore ray/triangle intersection algorithm
+// Updates ray hit record if new t is smaller
 fn ray_triangle_intersect(ray: ptr<function, Ray>, triangle_index: u32, instance_index: u32) {
     let prim = get_primitive(triangle_index, instance_index);
     let edge_1 = prim.p1 - prim.p0;
     let edge_2 = prim.p2 - prim.p0;
     let h = cross((*ray).dir, edge_2);
     let a = dot(edge_1, h);
-    if a > -0.0001 && a < 0.0001 { // Ray parallel to triangle
+    // if a > -0.0001 && a < 0.0001 { // Ray parallel to triangle
+    if abs(a) < 0.0001 { // Ray parallel to triangle
         return;
     }
     let f = 1.0 / a;
@@ -368,7 +378,24 @@ fn ray_triangle_intersect(ray: ptr<function, Ray>, triangle_index: u32, instance
     if t > 0.001 && t < (*ray).record.t  {
         let tri_data = get_triangle_data(triangle_index, instance_index);
         (*ray).record.t = t;
-        (*ray).record.normal = tri_data.n0;
         (*ray).record.instance_index = instance_index;
+        (*ray).record.triangle_index = triangle_index;
+        (*ray).record.u = u;
+        (*ray).record.v = v;
     }
+}
+
+fn transform_position(m: mat4x4f, p: vec3f) -> vec3f {
+    let h = m * vec4f(p, 1.0);
+    return h.xyz / h.w;
+}
+
+fn transform_direction(m: mat4x4f, p: vec3f) -> vec3f {
+    let h = m * vec4f(p, 0.0);
+    return h.xyz;
+}
+
+fn transform_normal(m: mat4x4f, p: vec3f) -> vec3f {
+    let h = transpose(m) * vec4f(p, 0.0);
+    return h.xyz;
 }

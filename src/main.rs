@@ -1,7 +1,4 @@
 use bevy::{
-    diagnostic::{
-        FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin, SystemInformationDiagnosticsPlugin,
-    },
     prelude::*,
     render::{
         camera::CameraRenderGraph,
@@ -9,7 +6,7 @@ use bevy::{
     },
 };
 use bevy_camera_operator::*;
-use pulse::{diagnostics::PulseDiagnosticsPlugin, path_tracer::*, PulsePlugin, PULSE_GRAPH};
+use pulse::{path_tracer::*, PulsePlugin, PULSE_GRAPH};
 
 pub const RENDER_WITH_PULSE: bool = true;
 
@@ -26,11 +23,12 @@ fn main() {
         PulsePlugin,
         PulsePathTracerPlugin,
         CameraControllerPlugin,
-        FrameTimeDiagnosticsPlugin,
+        // FrameTimeDiagnosticsPlugin,
         // SystemInformationDiagnosticsPlugin,
         // LogDiagnosticsPlugin::default(),
     ))
     .add_systems(Startup, setup)
+    .add_systems(Update, update_meshes)
     .run();
 }
 
@@ -163,5 +161,11 @@ fn setup(
             Camera3dBundle::default(),
             FreeFlyCameraController::new(FreeFlyCameraControllerConfig::default()),
         ));
+    }
+}
+
+pub fn update_meshes(mut meshes_q: Query<&mut Transform, With<Handle<Mesh>>>) {
+    for mut transform in meshes_q.iter_mut() {
+        transform.rotate(Quat::from_euler(EulerRot::XYZ, 0.01, 0.0, 0.0));
     }
 }

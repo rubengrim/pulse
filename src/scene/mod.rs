@@ -1,22 +1,15 @@
 use crate::utilities::*;
 use bevy::{
-    asset::load_internal_asset,
-    diagnostic::{Diagnostic, DiagnosticId, Diagnostics, DiagnosticsStore, RegisterDiagnostic},
+    diagnostic::{Diagnostic, DiagnosticId, Diagnostics, RegisterDiagnostic},
     prelude::*,
     render::{
-        camera::{CameraRenderGraph, ExtractedCamera},
-        extract_component::ExtractComponent,
-        mesh::{GpuBufferInfo, GpuMesh, Indices, VertexAttributeValues},
-        render_asset::{ExtractedAssets, RenderAssets},
+        mesh::{Indices, VertexAttributeValues},
         render_resource::*,
         renderer::{RenderDevice, RenderQueue},
-        texture::TextureCache,
-        view::ViewUniforms,
         Extract, MainWorld, Render, RenderApp, RenderSet,
     },
-    utils::{HashMap, HashSet},
+    utils::HashMap,
 };
-use std::num::NonZeroU32;
 use std::sync::Mutex;
 use std::time::Instant;
 
@@ -59,7 +52,7 @@ impl Plugin for PulseScenePlugin {
         render_app.register_diagnostic(
             Diagnostic::new(TLAS_BUILD_TIME, "tlas_build_time", 20)
                 .with_suffix("ms")
-                .with_smoothing_factor(0.0),
+                .with_smoothing_factor(1.0),
         );
 
         render_app
@@ -333,9 +326,9 @@ pub struct PulseMeshInstance {
 }
 
 pub struct PulsePrimitiveMeshInstance {
-    pub center: Vec3,
     pub bounds_min: Vec3,
     pub bounds_max: Vec3,
+    pub center: Vec3,
 }
 
 #[derive(Resource, Default)]
@@ -370,14 +363,61 @@ pub fn prepare_mesh_instances(
         });
 
         let root_node = &mesh_data.nodes[mesh_index.node_offset as usize];
-        let center = root_node.aabb_min + 0.5 * (root_node.aabb_max - root_node.aabb_min);
-        let center = transform_pos(transform, center);
-        let bounds_min = transform_pos(transform, root_node.aabb_min);
-        let bounds_max = transform_pos(transform, root_node.aabb_max);
+        let b_min = root_node.aabb_min;
+        let b_max = root_node.aabb_max;
+        // Calculate world space bounds.
+        let mut b_min_world = Vec3::MAX;
+        let mut b_max_world = Vec3::MIN;
+
+        let corner_1 = transform_position(Vec3::new(b_min.x, b_min.y, b_min.z), transform);
+        let corner_2 = transform_position(Vec3::new(b_max.x, b_min.y, b_min.z), transform);
+        let corner_3 = transform_position(Vec3::new(b_min.x, b_max.y, b_min.z), transform);
+        let corner_4 = transform_position(Vec3::new(b_min.x, b_min.y, b_max.z), transform);
+        let corner_5 = transform_position(Vec3::new(b_max.x, b_max.y, b_min.z), transform);
+        let corner_6 = transform_position(Vec3::new(b_min.x, b_max.y, b_max.z), transform);
+        let corner_7 = transform_position(Vec3::new(b_max.x, b_min.y, b_max.z), transform);
+        let corner_8 = transform_position(Vec3::new(b_max.x, b_max.y, b_max.z), transform);
+
+        b_min_world = b_min_world.min(corner_1);
+        b_min_world = b_min_world.min(corner_2);
+        b_min_world = b_min_world.min(corner_3);
+        b_min_world = b_min_world.min(corner_4);
+        b_min_world = b_min_world.min(corner_5);
+        b_min_world = b_min_world.min(corner_6);
+        b_min_world = b_min_world.min(corner_7);
+        b_min_world = b_min_world.min(corner_8);
+
+        b_max_world = b_max_world.max(corner_1);
+        b_max_world = b_max_world.max(corner_2);
+        b_max_world = b_max_world.max(corner_3);
+        b_max_world = b_max_world.max(corner_4);
+        b_max_world = b_max_world.max(corner_5);
+        b_max_world = b_max_world.max(corner_6);
+        b_max_world = b_max_world.max(corner_7);
+        b_max_world = b_max_world.max(corner_8);
+
+        let center = b_min_world + 0.5 * (b_max_world - b_min_world);
+
+        // for i in 0..8 {
+        //     let corner_x = if i & 1 == 1 { b_max.x } else { b_min.x };
+        //     let corner_y = if i & 2 == 1 { b_max.y } else { b_min.y };
+        //     let corner_z = if i & 4 == 1 { b_max.z } else { b_min.z };
+        //     let corner_world =
+        //         transform_position(transform, Vec3::new(corner_x, corner_y, corner_z));
+        //     b_min_world = b_min_world.min(corner_world);
+        //     b_max_world = b_max_world.max(corner_world);
+        // }
+
+        // let root_node = &mesh_data.nodes[mesh_index.node_offset as usize];
+        // let center = root_node.aabb_min + 0.5 * (root_node.aabb_max - root_node.aabb_min);
+        // let center = transform_position(transform, center);
+        // let bounds_min = transform_position(transform, root_node.aabb_min);
+        // let bounds_max = transform_position(transform, root_node.aabb_max);
+
         instance_primitives.push(PulsePrimitiveMeshInstance {
+            bounds_min: b_min_world,
+            bounds_max: b_max_world,
             center,
-            bounds_min,
-            bounds_max,
         });
     }
 
