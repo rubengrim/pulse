@@ -21,6 +21,9 @@ use tlas::*;
 pub const TLAS_BUILD_TIME: DiagnosticId =
     DiagnosticId::from_u128(178146834822086073791974408528866909483);
 
+pub const INSTANCE_PREPARE_TIME: DiagnosticId =
+    DiagnosticId::from_u128(178146834822086073791974408528866909483);
+
 pub struct PulseScenePlugin;
 
 impl Plugin for PulseScenePlugin {
@@ -49,11 +52,17 @@ impl Plugin for PulseScenePlugin {
             )
             .add_systems(Render, queue_scene_bind_group.in_set(RenderSet::Queue));
 
-        render_app.register_diagnostic(
-            Diagnostic::new(TLAS_BUILD_TIME, "tlas_build_time", 20)
-                .with_suffix("ms")
-                .with_smoothing_factor(1.0),
-        );
+        render_app
+            .register_diagnostic(
+                Diagnostic::new(TLAS_BUILD_TIME, "tlas_build_time", 20)
+                    .with_suffix("ms")
+                    .with_smoothing_factor(1.0),
+            )
+            .register_diagnostic(
+                Diagnostic::new(INSTANCE_PREPARE_TIME, "instance_prepare_time", 20)
+                    .with_suffix("ms")
+                    .with_smoothing_factor(1.0),
+            );
 
         render_app
             .init_resource::<ExtractedMeshAssets>()
@@ -347,6 +356,8 @@ pub fn prepare_mesh_instances(
 ) {
     mesh_instances.0 = vec![];
     let mut instance_primitives: Vec<PulsePrimitiveMeshInstance> = vec![]; // Used for TLAS creation.
+
+    let instance_prepare_start_time = Instant::now();
     for (handle, transform) in &extracted.0 {
         let Handle::Weak(id) = handle.clone_weak() else {
             continue;
@@ -420,6 +431,9 @@ pub fn prepare_mesh_instances(
             center,
         });
     }
+    diagnostics.add_measurement(INSTANCE_PREPARE_TIME, || {
+        instance_prepare_start_time.elapsed().as_secs_f64() * 1000.0
+    });
 
     let tlas_time_begin = Instant::now();
     tlas.0 = build_tlas(&instance_primitives);

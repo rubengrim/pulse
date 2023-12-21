@@ -83,10 +83,11 @@ fn setup(
     let monkey = asset_server.load("monkey_smooth.glb#Scene0");
 
     let step_size = 3.0;
-    let resolution = 20;
+    let resolution = 16;
     for x in 0..resolution {
         for z in 0..resolution {
-            let transform = Transform::from_xyz(x as f32 * step_size, 0.0, z as f32 * step_size);
+            let transform = Transform::from_xyz(x as f32 * step_size, 0.0, z as f32 * step_size)
+                .with_scale(Vec3::new(1.0, 2.0, 1.0));
             commands.spawn(SceneBundle {
                 scene: monkey.clone(),
                 transform,
@@ -164,8 +165,9 @@ fn setup(
     }
 }
 
-pub fn update_meshes(mut meshes_q: Query<&mut Transform, With<Handle<Mesh>>>) {
+pub fn update_meshes(mut meshes_q: Query<&mut Transform, With<Handle<Mesh>>>, time: Res<Time>) {
     for mut transform in meshes_q.iter_mut() {
-        transform.rotate(Quat::from_euler(EulerRot::XYZ, 0.007, 0.002, 0.002));
+        let e = Vec3::new(0.07, 0.02, 0.02) * time.delta_seconds() * 10.0;
+        transform.rotate(Quat::from_euler(EulerRot::XYZ, e.x, e.y, e.z));
     }
 }

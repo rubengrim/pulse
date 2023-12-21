@@ -239,10 +239,8 @@ fn traverse_blas(ray: ptr<function, Ray>, instance_index: u32) {
     // Transform ray to object/blas space.
     let instance = instances[instance_index];
     var ray_object = *ray;
-    let origin_object = instance.world_object * vec4f(ray_object.origin, 1.0);
-    ray_object.origin = origin_object.xyz / origin_object.w;
-    ray_object.dir = normalize((instance.world_object * vec4f(ray_object.dir, 0.0)).xyz);
-    // ray_object.dir = (instance.world_object * vec4f(ray_object.dir, 0.0)).xyz;
+    ray_object.origin = transform_position(instance.world_object, ray_object.origin);
+    ray_object.dir = transform_direction(instance.world_object, ray_object.dir);
 
     var node_index = 0u;
     var stack: array<u32, 32>;
@@ -295,7 +293,12 @@ fn traverse_blas(ray: ptr<function, Ray>, instance_index: u32) {
         }
     }
 
-    (*ray).record = ray_object.record;
+    let hit_position_world = transform_position(instance.object_world, ray_object.origin + ray_object.record.t * ray_object.dir);
+    let new_t_world = length(hit_position_world - (*ray).origin);
+    if new_t_world < (*ray).record.t {
+        (*ray).record = ray_object.record;
+        (*ray).record.t = new_t_world;
+    }  
 
     // if ray_object.record.t < (*ray).record.t {
     //     // Transform ray back to world space.
