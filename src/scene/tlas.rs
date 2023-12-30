@@ -74,7 +74,7 @@ pub fn subdivide(
         return;
     }
 
-    let (axis, split_position, split_cost) =
+    let (axis, split_position, _split_cost) =
         find_best_split_plane(&nodes[node_idx], instances, instance_indices);
 
     // let no_split_cost = calculate_node_cost(&nodes[node_idx]);

@@ -1,12 +1,13 @@
 use crate::utilities::*;
 use bevy::{
+    asset::load_internal_asset,
     diagnostic::{Diagnostic, DiagnosticId, Diagnostics, RegisterDiagnostic},
     prelude::*,
     render::{
         mesh::{Indices, VertexAttributeValues},
         render_resource::*,
         renderer::{RenderDevice, RenderQueue},
-        Extract, MainWorld, Render, RenderApp, RenderSet,
+        Extract, Render, RenderApp, RenderSet,
     },
     utils::HashMap,
 };
@@ -18,6 +19,12 @@ use blas::*;
 pub mod tlas;
 use tlas::*;
 
+pub const PULSE_SCENE_BINDINGS_SHADER_HANDLE: Handle<Shader> =
+    Handle::weak_from_u128(187737725855836603431472235313437654946);
+
+pub const PULSE_SCENE_TYPES_SHADER_HANDLE: Handle<Shader> =
+    Handle::weak_from_u128(187731725155836403431412235313437654946);
+
 pub const TLAS_BUILD_TIME: DiagnosticId =
     DiagnosticId::from_u128(178146834822086073791974408528866909483);
 
@@ -28,8 +35,21 @@ pub struct PulseScenePlugin;
 
 impl Plugin for PulseScenePlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<AABBsToDraw>()
-            .add_systems(Update, draw_aabbs);
+        // app.init_resource::<AABBsToDraw>()
+        //     .add_systems(Update, draw_aabbs);
+        load_internal_asset!(
+            app,
+            PULSE_SCENE_BINDINGS_SHADER_HANDLE,
+            "bindings.wgsl",
+            Shader::from_wgsl
+        );
+
+        load_internal_asset!(
+            app,
+            PULSE_SCENE_TYPES_SHADER_HANDLE,
+            "types.wgsl",
+            Shader::from_wgsl
+        );
 
         let render_app = app.sub_app_mut(RenderApp);
         render_app
@@ -85,46 +105,46 @@ impl Plugin for PulseScenePlugin {
 #[derive(Resource, Default)]
 pub struct AABBsToDraw(pub Mutex<Vec<(Vec3, Vec3)>>);
 
-pub fn send_aabbs_to_app_world(
-    main_world: ResMut<MainWorld>,
-    instances: Res<ExtractedMeshInstances>,
-    meshes: Res<PulseMeshes>,
-    tlas: Res<PulseSceneTLAS>,
-) {
-    let mut aabbs = main_world.resource::<AABBsToDraw>().0.lock().unwrap();
-    *aabbs = vec![];
-    // for (handle, transform) in instances.0.iter() {
-    //     let Handle::Weak(id) = handle.clone_weak() else {
-    //         continue;
-    //     };
-    //     let transform_mat = transform.compute_matrix();
-    //     let Some(mesh) = meshes.0.get(&id) else {
-    //         continue;
-    //     };
-    //     for node in &mesh.bvh.nodes {
-    //         if node.tri_count > 0 {
-    //             // warn!("tri_count: {}", node.tri_count);
-    //             let min = transform_pos(transform_mat, node.aabb_min);
-    //             let max = transform_pos(transform_mat, node.aabb_max);
-    //             aabbs.push((min, max));
-    //         }
-    //     }
-    // }
-    for node in &tlas.0.nodes {
-        aabbs.push((node.aabb_min, node.aabb_max));
-    }
-}
+// pub fn send_aabbs_to_app_world(
+//     main_world: ResMut<MainWorld>,
+//     instances: Res<ExtractedMeshInstances>,
+//     meshes: Res<PulseMeshes>,
+//     tlas: Res<PulseSceneTLAS>,
+// ) {
+//     let mut aabbs = main_world.resource::<AABBsToDraw>().0.lock().unwrap();
+//     *aabbs = vec![];
+//     // for (handle, transform) in instances.0.iter() {
+//     //     let Handle::Weak(id) = handle.clone_weak() else {
+//     //         continue;
+//     //     };
+//     //     let transform_mat = transform.compute_matrix();
+//     //     let Some(mesh) = meshes.0.get(&id) else {
+//     //         continue;
+//     //     };
+//     //     for node in &mesh.bvh.nodes {
+//     //         if node.tri_count > 0 {
+//     //             // warn!("tri_count: {}", node.tri_count);
+//     //             let min = transform_pos(transform_mat, node.aabb_min);
+//     //             let max = transform_pos(transform_mat, node.aabb_max);
+//     //             aabbs.push((min, max));
+//     //         }
+//     //     }
+//     // }
+//     for node in &tlas.0.nodes {
+//         aabbs.push((node.aabb_min, node.aabb_max));
+//     }
+// }
 
-fn draw_aabbs(aabbs: Res<AABBsToDraw>, mut gizmos: Gizmos) {
-    let aabbs = &*aabbs.0.lock().unwrap();
-    for (min, max) in aabbs.iter() {
-        let e = *max - *min;
-        gizmos.cuboid(
-            Transform::from_translation(*min + 0.5 * e).with_scale(Vec3::new(e.x, e.y, e.z)),
-            Color::CYAN,
-        );
-    }
-}
+// fn draw_aabbs(aabbs: Res<AABBsToDraw>, mut gizmos: Gizmos) {
+//     let aabbs = &*aabbs.0.lock().unwrap();
+//     for (min, max) in aabbs.iter() {
+//         let e = *max - *min;
+//         gizmos.cuboid(
+//             Transform::from_translation(*min + 0.5 * e).with_scale(Vec3::new(e.x, e.y, e.z)),
+//             Color::CYAN,
+//         );
+//     }
+// }
 
 #[derive(Resource, Default)]
 pub struct ExtractedMeshAssets {
