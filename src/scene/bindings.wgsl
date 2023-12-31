@@ -7,6 +7,7 @@
     TLASNode,
     MeshInstance,
     SceneUniform,
+    Material,
 }
 
 @group(0) @binding(0) var<uniform> scene_uniform: SceneUniform;
@@ -17,3 +18,4 @@
 @group(0) @binding(5) var<storage> tlas_nodes: array<TLASNode>;
 @group(0) @binding(6) var<storage> instance_indices: array<u32>;
 @group(0) @binding(7) var<storage> instances: array<MeshInstance>;
+@group(0) @binding(8) var<storage> materials: array<Material>;

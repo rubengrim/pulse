@@ -1,7 +1,9 @@
+use std::sync::atomic::Ordering;
+
 use crate::{
-    create_render_target_bind_group,
     path_tracer::pipeline::{PulsePathTracerPipeline, PulsePathTracerPipelineId},
     scene::PulseSceneBindGroup,
+    utilities::*,
     PulseRenderTarget,
 };
 use bevy::{
@@ -10,10 +12,12 @@ use bevy::{
     render::{
         render_graph::{NodeRunError, RenderGraphContext, ViewNode},
         render_resource::*,
-        renderer::{RenderContext, RenderQueue},
-        view::{ViewTarget, ViewUniformOffset, ViewUniforms},
+        renderer::{RenderContext, RenderDevice, RenderQueue},
+        view::{ViewUniformOffset, ViewUniforms},
     },
 };
+
+use super::{PulsePathTracer, PulsePathTracerUniform};
 
 pub struct PulsePathTracerNode;
 
@@ -23,6 +27,7 @@ impl PulsePathTracerNode {
 
 impl ViewNode for PulsePathTracerNode {
     type ViewQuery = (
+        &'static PulsePathTracer,
         &'static PulseRenderTarget,
         &'static PulsePathTracerPipelineId,
         &'static ViewUniformOffset,
@@ -34,7 +39,7 @@ impl ViewNode for PulsePathTracerNode {
         &self,
         _graph: &mut RenderGraphContext,
         render_context: &mut RenderContext,
-        (render_target, pipeline_id, view_offset): QueryItem<Self::ViewQuery>,
+        (pulse_path_tracer, render_target, pipeline_id, view_offset): QueryItem<Self::ViewQuery>,
         world: &World,
     ) -> Result<(), NodeRunError> {
         let pulse_pipeline = world.resource::<PulsePathTracerPipeline>();
@@ -48,6 +53,19 @@ impl ViewNode for PulsePathTracerNode {
             return Ok(());
         };
 
+        let device = world.resource::<RenderDevice>();
+        let queue = world.resource::<RenderQueue>();
+        let path_tracer_uniform = create_uniform_buffer(
+            PulsePathTracerUniform {
+                sample_accumulation_count: pulse_path_tracer
+                    .sample_accumulation_count
+                    .fetch_add(1, Ordering::SeqCst),
+            },
+            Some("pulse_path_tracer_uniform_buffer"),
+            device,
+            queue,
+        );
+
         let view_bind_group = render_context.render_device().create_bind_group(
             Some("pulse_path_tracer_view_bind_group"),
             &pulse_pipeline.view_layout,
@@ -59,6 +77,10 @@ impl ViewNode for PulsePathTracerNode {
                 BindGroupEntry {
                     binding: 1,
                     resource: BindingResource::TextureView(render_target.view()),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: path_tracer_uniform.into_binding(),
                 },
             ],
         );

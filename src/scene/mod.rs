@@ -56,8 +56,9 @@ impl Plugin for PulseScenePlugin {
             .add_systems(
                 ExtractSchedule,
                 (
+                    extract_material_assets,
                     extract_mesh_assets,
-                    extract_mesh_instances,
+                    extract_mesh_material_instances,
                     // send_aabbs_to_app_world,
                 ),
             )
@@ -67,6 +68,8 @@ impl Plugin for PulseScenePlugin {
                     prepare_extracted_mesh_assets,
                     prepare_mesh_data,
                     prepare_mesh_instances,
+                    prepare_extracted_material_assets,
+                    prepare_material_data,
                 )
                     .in_set(RenderSet::Prepare),
             )
@@ -87,11 +90,15 @@ impl Plugin for PulseScenePlugin {
         render_app
             .init_resource::<ExtractedMeshAssets>()
             .init_resource::<PulseMeshes>()
-            .init_resource::<ExtractedMeshInstances>()
+            .init_resource::<ExtractedMeshMaterialInstances>()
             .init_resource::<PulseMeshIndices>()
             .init_resource::<PulseMeshInstances>()
             .init_resource::<PulsePreparedMeshAssetData>()
-            .init_resource::<PulseSceneTLAS>();
+            .init_resource::<PulseSceneTLAS>()
+            .init_resource::<ExtractedMaterialAssets>()
+            .init_resource::<PulseMaterials>()
+            .init_resource::<PulseMaterialIndices>()
+            .init_resource::<PulsePreparedMaterialAssetData>();
     }
 
     fn finish(&self, app: &mut App) {
@@ -147,9 +154,106 @@ pub struct AABBsToDraw(pub Mutex<Vec<(Vec3, Vec3)>>);
 // }
 
 #[derive(Resource, Default)]
-pub struct ExtractedMeshAssets {
+pub struct ExtractedMaterialAssets {
+    pub new_or_modified: Vec<(AssetId<StandardMaterial>, StandardMaterial)>,
+    pub removed: Vec<AssetId<StandardMaterial>>,
+}
+
+impl ExtractedMaterialAssets {
+    pub fn empty(&self) -> bool {
+        self.new_or_modified.len() == 0 && self.new_or_modified.len() == 0
+    }
+}
+
+fn extract_material_assets(
+    mut material_asset_events: Extract<EventReader<AssetEvent<StandardMaterial>>>,
+    material_assets: Extract<Res<Assets<StandardMaterial>>>,
+    mut extracted: ResMut<ExtractedMaterialAssets>,
+) {
+    let mut new_or_modified = Vec::new();
+    let mut removed = Vec::new();
+    for event in material_asset_events.read() {
+        match event {
+            AssetEvent::Added { id } | AssetEvent::Modified { id } => {
+                if let Some(material) = material_assets.get(*id) {
+                    info!("Extracted material with id {:?}", id);
+                    new_or_modified.push((id.clone(), material.clone()));
+                }
+            }
+            AssetEvent::Removed { id } => {
+                removed.push(id.clone());
+            }
+            AssetEvent::LoadedWithDependencies { .. } => {}
+        }
+    }
+
+    extracted.new_or_modified = new_or_modified;
+    extracted.removed = removed;
+}
+
+#[derive(ShaderType, Clone)]
+pub struct PulseMaterial {
+    pub base_color: Vec4,
+    pub emissive: Vec4,
+}
+
+#[derive(Resource, Default, Deref, DerefMut)]
+struct PulseMaterials(pub HashMap<AssetId<StandardMaterial>, PulseMaterial>);
+
+fn prepare_extracted_material_assets(
+    extracted: Res<ExtractedMaterialAssets>,
+    mut materials: ResMut<PulseMaterials>,
+) {
+    for (id, material) in extracted.new_or_modified.iter() {
+        let pulse_material = PulseMaterial {
+            base_color: material.base_color.into(),
+            emissive: material.emissive.into(),
+        };
+
+        materials.insert(id.clone(), pulse_material);
+    }
+
+    for id in extracted.removed.iter() {
+        materials.remove(id);
+    }
+}
+
+#[derive(Resource, Default, Deref, DerefMut)]
+struct PulsePreparedMaterialAssetData(pub Vec<PulseMaterial>);
+
+#[derive(Resource, Default, Deref, DerefMut)]
+struct PulseMaterialIndices(pub HashMap<AssetId<StandardMaterial>, u32>);
+
+fn prepare_material_data(
+    materials: Res<PulseMaterials>,
+    extracted: Res<ExtractedMaterialAssets>,
+    mut material_data: ResMut<PulsePreparedMaterialAssetData>,
+    mut material_indices: ResMut<PulseMaterialIndices>,
+) {
+    // Abort if material data is the same as last frame's.
+    if extracted.empty() {
+        return;
+    }
+
+    *material_data = PulsePreparedMaterialAssetData::default();
+    *material_indices = PulseMaterialIndices::default();
+    for (id, material) in materials.0.iter() {
+        let index = material_data.len() as u32;
+        material_indices.insert(id.clone(), index);
+        material_data.push(material.clone());
+    }
+}
+
+#[derive(Resource, Default)]
+struct ExtractedMeshAssets {
     pub new_or_modified: Vec<(AssetId<Mesh>, Mesh)>,
     pub removed: Vec<AssetId<Mesh>>,
+}
+
+impl ExtractedMeshAssets {
+    pub fn empty(&self) -> bool {
+        self.new_or_modified.len() == 0 && self.new_or_modified.len() == 0
+    }
 }
 
 fn extract_mesh_assets(
@@ -283,6 +387,7 @@ pub struct PulsePreparedMeshAssetData {
     pub triangle_data: Vec<PulseTriangleData>,
     pub indices: Vec<u32>,
     pub nodes: Vec<PulseBLASNode>,
+    pub materials: Vec<PulseMaterial>,
 }
 
 // Index into buffers in `PulsePreparedMeshAssetData`.
@@ -303,10 +408,12 @@ fn prepare_mesh_data(
     mut mesh_indices: ResMut<PulseMeshIndices>,
 ) {
     // Abort if mesh data is the same as last frame's.
-    if extracted.new_or_modified.len() == 0 && extracted.removed.len() == 0 {
+    if extracted.empty() {
         return;
     }
 
+    *prepared_mesh_data = PulsePreparedMeshAssetData::default();
+    *mesh_indices = PulseMeshIndices::default();
     for (id, mesh) in meshes.0.iter() {
         let triangle_offset = prepared_mesh_data.primitives.len() as u32;
         let index_offset = prepared_mesh_data.indices.len() as u32;
@@ -335,16 +442,18 @@ fn prepare_mesh_data(
 }
 
 #[derive(Resource, Default)]
-pub struct ExtractedMeshInstances(pub Vec<(Handle<Mesh>, GlobalTransform)>);
+pub struct ExtractedMeshMaterialInstances(
+    pub Vec<(Handle<Mesh>, Handle<StandardMaterial>, GlobalTransform)>,
+);
 
-pub fn extract_mesh_instances(
-    query: Extract<Query<(&Handle<Mesh>, &GlobalTransform)>>,
-    mut extracted: ResMut<ExtractedMeshInstances>,
+pub fn extract_mesh_material_instances(
+    query: Extract<Query<(&Handle<Mesh>, &Handle<StandardMaterial>, &GlobalTransform)>>,
+    mut extracted: ResMut<ExtractedMeshMaterialInstances>,
 ) {
     extracted.0 = query
         .iter()
-        .map(|(handle, transform)| (handle.clone(), transform.clone()))
-        .collect::<Vec<(Handle<Mesh>, GlobalTransform)>>();
+        .map(|(mesh, material, transform)| (mesh.clone(), material.clone(), transform.clone()))
+        .collect::<Vec<(Handle<Mesh>, Handle<StandardMaterial>, GlobalTransform)>>();
 }
 
 #[derive(ShaderType, Copy, Clone, Debug)]
@@ -352,6 +461,7 @@ pub struct PulseMeshInstance {
     pub transform: Mat4,
     pub transform_inv: Mat4,
     pub mesh_index: PulseMeshIndex,
+    pub material_index: u32,
 }
 
 pub struct PulsePrimitiveMeshInstance {
@@ -366,10 +476,11 @@ pub struct PulseSceneTLAS(pub PulseTLAS);
 #[derive(Resource, Default, Debug)]
 pub struct PulseMeshInstances(pub Vec<PulseMeshInstance>);
 
-pub fn prepare_mesh_instances(
-    extracted: Res<ExtractedMeshInstances>,
+fn prepare_mesh_instances(
+    extracted: Res<ExtractedMeshMaterialInstances>,
     mesh_indices: Res<PulseMeshIndices>,
     mesh_data: Res<PulsePreparedMeshAssetData>,
+    material_indices: Res<PulseMaterialIndices>,
     mut mesh_instances: ResMut<PulseMeshInstances>,
     mut tlas: ResMut<PulseSceneTLAS>,
     mut diagnostics: Diagnostics,
@@ -378,11 +489,16 @@ pub fn prepare_mesh_instances(
     let mut instance_primitives: Vec<PulsePrimitiveMeshInstance> = vec![]; // Used for TLAS creation.
 
     let instance_prepare_start_time = Instant::now();
-    for (handle, transform) in &extracted.0 {
-        let Handle::Weak(id) = handle.clone_weak() else {
+    for (mesh_handle, material_handle, transform) in &extracted.0 {
+        let (Handle::Weak(mesh_id), Handle::Weak(material_id)) =
+            (mesh_handle.clone_weak(), material_handle.clone_weak())
+        else {
             continue;
         };
-        let Some(mesh_index) = mesh_indices.0.get(&id) else {
+        let (Some(mesh_index), Some(material_index)) = (
+            mesh_indices.0.get(&mesh_id),
+            material_indices.0.get(&material_id),
+        ) else {
             continue;
         };
         let transform = transform.compute_matrix();
@@ -391,6 +507,7 @@ pub fn prepare_mesh_instances(
             transform,
             transform_inv,
             mesh_index: mesh_index.clone(),
+            material_index: *material_index,
         });
 
         let root_node = &mesh_data.nodes[mesh_index.node_offset as usize];
@@ -559,6 +676,17 @@ impl FromWorld for PulseSceneBindGroupLayout {
                     },
                     count: None,
                 },
+                // Materials
+                BindGroupLayoutEntry {
+                    binding: 8,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         }))
     }
@@ -575,6 +703,7 @@ pub struct PulseSceneBindGroup(pub Option<BindGroup>);
 // TODO: Don't run every frame
 fn queue_scene_bind_group(
     mesh_data: Res<PulsePreparedMeshAssetData>,
+    material_data: Res<PulsePreparedMaterialAssetData>,
     instances: Res<PulseMeshInstances>,
     tlas: Res<PulseSceneTLAS>,
     mut bind_group: ResMut<PulseSceneBindGroup>,
@@ -637,7 +766,14 @@ fn queue_scene_bind_group(
 
     let instance_buffer = create_storage_buffer(
         instances.0.clone(),
-        Some("pulse_node_buffer"),
+        Some("pulse_instance_buffer"),
+        &render_device,
+        &render_queue,
+    );
+
+    let material_buffer = create_storage_buffer(
+        material_data.0.clone(),
+        Some("pulse_material_buffer"),
         &render_device,
         &render_queue,
     );
@@ -677,6 +813,10 @@ fn queue_scene_bind_group(
             BindGroupEntry {
                 binding: 7,
                 resource: instance_buffer.binding().unwrap(),
+            },
+            BindGroupEntry {
+                binding: 8,
+                resource: material_buffer.binding().unwrap(),
             },
         ],
     ));

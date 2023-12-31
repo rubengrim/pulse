@@ -1,14 +1,10 @@
-use crate::{create_render_target_layout, scene::PulseSceneBindGroupLayout};
+use crate::scene::PulseSceneBindGroupLayout;
 
-use super::{PulsePathTracer, PulseRenderTarget, PULSE_PATH_TRACER_SHADER_HANDLE};
+use super::{PulsePathTracerUniform, PulseRenderTarget, PULSE_PATH_TRACER_SHADER_HANDLE};
 use bevy::{
     prelude::*,
     render::{
-        camera::ExtractedCamera,
-        render_resource::*,
-        renderer::RenderDevice,
-        texture::{CachedTexture, TextureCache},
-        view::{ViewTarget, ViewUniform, ViewUniforms},
+        camera::ExtractedCamera, render_resource::*, renderer::RenderDevice, view::ViewUniform,
     },
 };
 
@@ -35,7 +31,7 @@ impl FromWorld for PulsePathTracerPipeline {
                     },
                     count: None,
                 },
-                // Pulse render target view
+                // Output texture view
                 BindGroupLayoutEntry {
                     binding: 1,
                     visibility: ShaderStages::COMPUTE,
@@ -43,6 +39,17 @@ impl FromWorld for PulsePathTracerPipeline {
                         access: StorageTextureAccess::ReadWrite,
                         format: PulseRenderTarget::TEXTURE_FORMAT,
                         view_dimension: TextureViewDimension::D2,
+                    },
+                    count: None,
+                },
+                // Path tracer uniform
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(PulsePathTracerUniform::min_size()),
                     },
                     count: None,
                 },

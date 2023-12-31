@@ -1,79 +1,46 @@
-// #import pulse::scene_bindings:
+#import pulse::scene::{
+    types::{
+        Primitive,
+        TriangleData,
+        BLASNode,
+        TLASNode,
+        MeshInstance,
+        SceneUniform,
+        Material,
+        Ray,
+        RayHitRecord,
+    }, 
+    bindings::{
+        scene_uniform,
+        primitives,
+        triangle_data,
+        triangle_indices,
+        blas_nodes,
+        tlas_nodes,
+        instance_indices,
+        instances,
+        materials,
+    }
+}
 #import bevy_render::view::View
 
-struct Primitive {
-    p0: vec3<f32>,
-    p1: vec3<f32>,
-    p2: vec3<f32>,
-}
+const PI: f32 = 3.141592653589793;
 
-struct TriangleData {
-    n0: vec3<f32>,
-    n1: vec3<f32>,
-    n2: vec3<f32>,
-    uv0: vec2<f32>,
-    uv1: vec2<f32>,
-    uv2: vec2<f32>,
+struct PathTracerUniform {
+    sample_accumulation_count: u32,
 }
-
-struct BLASNode {
-    aabb_min: vec3<f32>,
-    a_or_first_tri: u32,
-    aabb_max: vec3<f32>,
-    tri_count: u32,
-}
-
-struct TLASNode {
-    aabb_min: vec3<f32>,
-    a_or_first_instance: u32,
-    aabb_max: vec3<f32>,
-    instance_count: u32,
-}
-
-struct MeshInstance {
-    object_world: mat4x4f,
-    world_object: mat4x4f,
-    triangle_offset: u32,
-    // triangle_count: u32,
-    index_offset: u32,
-    // index_count: u32,
-    node_offset: u32,
-    // node_count: u32,
-}
-
-struct SceneUniform {
-    instance_count: u32,
-}
-
-@group(0) @binding(0) var<uniform> scene_uniform: SceneUniform;
-@group(0) @binding(1) var<storage> primitives: array<Primitive>;
-@group(0) @binding(2) var<storage> triangle_data: array<TriangleData>;
-@group(0) @binding(3) var<storage> triangle_indices: array<u32>;
-@group(0) @binding(4) var<storage> blas_nodes: array<BLASNode>;
-@group(0) @binding(5) var<storage> tlas_nodes: array<TLASNode>;
-@group(0) @binding(6) var<storage> instance_indices: array<u32>;
-@group(0) @binding(7) var<storage> instances: array<MeshInstance>;
 
 @group(1) @binding(0) var<uniform> view: View;
 @group(1) @binding(1) var output_texture: texture_storage_2d<rgba16float, read_write>;
+@group(1) @binding(2) var<uniform> path_tracer_uniform: PathTracerUniform;
 
-struct Ray {
-    origin: vec3f,
-    dir: vec3f,
-    record: RayHitRecord,
-}
-
-struct RayHitRecord {
-    t: f32,
-    instance_index: u32,
-    triangle_index: u32,
-    // Barycentric coordinates of hit position
-    u: f32,
-    v: f32,
-}
 
 @compute @workgroup_size(16, 16, 1)
 fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
+    let pixel_index = id.x + id.y * u32(view.viewport.z);
+    var rng_state = pixel_index + path_tracer_uniform.sample_accumulation_count * 5817321u;
+
+    let pixel_jitter = rand_f_pair(&rng_state) / view.viewport.zw;
     var pixel_uv = (vec2<f32>(id.xy) + 0.5) / view.viewport.zw;
     // Clip position goes from -1 to 1.
     let pixel_clip_pos = (pixel_uv * 2.0) - 1.0;
@@ -84,32 +51,38 @@ fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
     let t_far = 1e30;
     ray.record = RayHitRecord(t_far, 0u, 0u, 0.0, 0.0);
 
-    var color_out: vec4<f32>;
-    trace_ray_tlas(&ray);
-    // trace_ray(&ray);
-    if ray.record.t < 0.1 || ray.record.t >= t_far  {
-        // Miss
-        color_out = vec4<f32>(0.0, 0.3, 0.3, 1.0);
-    } else {
-        // Hit
-        let instance = instances[ray.record.instance_index];
-        let t_idx = triangle_indices[instance.index_offset + ray.record.triangle_index];
-        let t = triangle_data[instance.triangle_offset + t_idx];
-        let w = 1.0 - (ray.record.u + ray.record.v);
-        let normal_interpolated = w * t.n0 + ray.record.u * t.n1 + ray.record.v * t.n2;
-        let normal_world = normalize(transform_direction(instance.object_world, normal_interpolated));
-        let hit_position_world = transform_position(instance.object_world, ray.origin + ray.record.t * ray.dir);
+    var throughput = vec3f(1.0);
+    var color_out = vec3f(0.0);
+    let max_depth: u32 = 1u;
+    for (var depth: u32 = 0u; depth < max_depth; depth += 1u){    
+        trace_ray_tlas(&ray);
+        if ray.record.t >= t_far  {
+            // Miss
+            color_out += throughput * vec3<f32>(0.0, 0.3, 0.3);
+            break;
+        } else {
+            // Hit
+            let instance = instances[ray.record.instance_index];
+            let t_idx = triangle_indices[instance.index_offset + ray.record.triangle_index];
+            let t = triangle_data[instance.triangle_offset + t_idx];
+            let w = 1.0 - (ray.record.u + ray.record.v);
+            let normal = w * t.n_first + ray.record.u * t.n_second + ray.record.v * t.n_third;
+            let world_normal = normalize(transform_direction(instance.object_world, normal));
+            let world_hit_position = transform_position(instance.object_world, ray.origin + ray.record.t * ray.dir);
 
-        let light_position = vec3<f32>(2.0, 5.0, 1.0);
-        let light_strength = 15.0;
-        // let to_light = light_position - hit_position_world;
-        let to_light = vec3f(0.0, 1.0, 0.0);
-        let f = dot(normalize(to_light), normal_world);
-        color_out = vec4<f32>(f * vec3<f32>(1.0, 0.0, 0.0), 1.0);
-        // color_out *= light_strength / dot(to_light, to_light);
-    }
-  
-    textureStore(output_texture, id.xy, color_out);
+            let material_index = instance.material_index;
+            color_out = materials[material_index].base_color.xyz;
+
+            // let scatter_dir = sample_hemisphere_rejection(world_normal, &rng_state);
+            let scatter_dir = sample_cosine_hemisphere_solari(world_normal, &rng_state);
+            // let scatter_dir = scatter_mirror(ray.dir, world_normal);
+            ray.dir = normalize(scatter_dir);
+            ray.origin = world_hit_position + 0.001 * world_normal;
+            ray.record = RayHitRecord(t_far, 0u, 0u, 0.0, 0.0);
+        }
+    }  
+
+    textureStore(output_texture, id.xy, vec4f(color_out, 1.0));
 }
 
 fn trace_ray_tlas(ray: ptr<function, Ray>) {
@@ -358,8 +331,8 @@ fn ray_aabb_intersect(ray: ptr<function, Ray>, aabb_min: vec3<f32>, aabb_max: ve
 // Updates ray hit record if new t is smaller
 fn ray_triangle_intersect(ray: ptr<function, Ray>, triangle_index: u32, instance_index: u32) {
     let prim = get_primitive(triangle_index, instance_index);
-    let edge_1 = prim.p1 - prim.p0;
-    let edge_2 = prim.p2 - prim.p0;
+    let edge_1 = prim.p_second- prim.p_first;
+    let edge_2 = prim.p_third- prim.p_first;
     let h = cross((*ray).dir, edge_2);
     let a = dot(edge_1, h);
     // if a > -0.0001 && a < 0.0001 { // Ray parallel to triangle
@@ -367,7 +340,7 @@ fn ray_triangle_intersect(ray: ptr<function, Ray>, triangle_index: u32, instance
         return;
     }
     let f = 1.0 / a;
-    let s = (*ray).origin - prim.p0;
+    let s = (*ray).origin - prim.p_first;
     let u = f * dot(s, h);
     if u < 0.0 || u > 1.0 {
         return;
@@ -401,4 +374,56 @@ fn transform_direction(m: mat4x4f, p: vec3f) -> vec3f {
 fn transform_normal(m: mat4x4f, p: vec3f) -> vec3f {
     let h = transpose(m) * vec4f(p, 0.0);
     return h.xyz;
+}
+
+fn rand_u(state: ptr<function, u32>) -> u32 {
+    // PCG hash
+    *state = *state * 747796405u + 2891336453u;
+    let word = ((*state >> ((*state >> 28u) + 4u)) ^ *state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+fn rand_f(state: ptr<function, u32>) -> f32 {
+    // PCG hash
+    *state = *state * 747796405u + 2891336453u;
+    let word = ((*state >> ((*state >> 28u) + 4u)) ^ *state) * 277803737u;
+    return f32((word >> 22u) ^ word) * bitcast<f32>(0x2f800004u);
+}
+
+fn rand_f_pair(state: ptr<function, u32>) -> vec2<f32> {
+    return vec2(rand_f(state), rand_f(state));
+}
+
+fn rand_range_u(n: u32, state: ptr<function, u32>) -> u32 {
+    return rand_u(state) % n;
+}
+
+fn sample_cosine_hemisphere_solari(normal: vec3<f32>, state: ptr<function, u32>) -> vec3<f32> {
+    let cos_theta = 2.0 * rand_f(state) - 1.0;
+    let phi = 2.0 * PI * rand_f(state);
+    let sin_theta = sqrt(max(1.0 - cos_theta * cos_theta, 0.0));
+    let sin_phi = sin(phi);
+    let cos_phi = cos(phi);
+    let unit_sphere_direction = normalize(vec3(sin_theta * cos_phi, cos_theta, sin_theta * sin_phi));
+    return normal + unit_sphere_direction;
+}
+
+
+fn scatter_mirror(in: vec3f, normal: vec3f) -> vec3f {
+    return in - 2.0 * dot(in, normal) * normal;
+}
+
+fn sample_hemisphere_rejection(normal: vec3f, state: ptr<function, u32>) -> vec3f {
+    loop {
+        let x = rand_f(state) * 2.0 - 1.0;
+        let y = rand_f(state) * 2.0 - 1.0;
+        let z = rand_f(state) * 2.0 - 1.0;
+
+        var candidate = vec3f(x, y, z);
+        if length(candidate) <= 1.0 && dot(candidate, normal) > 0.0 {
+            candidate = normalize(candidate);
+            return candidate;
+        }
+    }
+    return normal;
 }

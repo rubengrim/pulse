@@ -35,11 +35,14 @@ struct MeshInstance {
     object_world: mat4x4f,
     world_object: mat4x4f,
     triangle_offset: u32,
-    // triangle_count: u32,
     index_offset: u32,
-    // index_count: u32,
     node_offset: u32,
-    // node_count: u32,
+    material_index: u32,
+}
+
+struct Material {
+    base_color: vec4f,
+    emissive: vec4f,
 }
 
 struct SceneUniform {

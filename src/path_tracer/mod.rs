@@ -1,15 +1,21 @@
+use std::sync::{
+    atomic::{AtomicU32, Ordering},
+    Arc,
+};
+
 use crate::{PulseRenderTarget, PULSE_GRAPH};
 use bevy::{
     asset::load_internal_asset,
     prelude::*,
     render::{
         camera::{CameraRenderGraph, ExtractedCamera},
-        extract_component::ExtractComponent,
+        extract_component::{ExtractComponent, ExtractComponentPlugin},
         render_resource::*,
         renderer::RenderDevice,
         texture::TextureCache,
         Render, RenderApp, RenderSet,
     },
+    transform::TransformSystem,
 };
 
 pub mod node;
@@ -31,6 +37,13 @@ impl Plugin for PulsePathTracerPlugin {
             "path_tracer.wgsl",
             Shader::from_wgsl
         );
+
+        app.add_plugins(ExtractComponentPlugin::<PulsePathTracer>::default());
+
+        app.add_systems(
+            PostUpdate,
+            reset_accumulation_on_movement.after(TransformSystem::TransformPropagate),
+        );
     }
 
     fn finish(&self, app: &mut App) {
@@ -47,9 +60,26 @@ impl Plugin for PulsePathTracerPlugin {
     }
 }
 
+#[derive(ShaderType)]
+pub struct PulsePathTracerUniform {
+    pub sample_accumulation_count: u32,
+}
+
 #[derive(Component, Default, Clone, ExtractComponent)]
 pub struct PulsePathTracer {
-    test_value: f32,
+    pub sample_accumulation_count: Arc<AtomicU32>,
+    pub last_transform: GlobalTransform,
+}
+
+fn reset_accumulation_on_movement(mut views: Query<(&GlobalTransform, &mut PulsePathTracer)>) {
+    for (current_transform, mut path_tracer) in views.iter_mut() {
+        if *current_transform != path_tracer.last_transform {
+            path_tracer
+                .sample_accumulation_count
+                .store(0, Ordering::SeqCst);
+            path_tracer.last_transform = *current_transform;
+        }
+    }
 }
 
 #[derive(Bundle)]
@@ -65,7 +95,7 @@ pub struct PulsePathTracerCameraBundle {
 impl Default for PulsePathTracerCameraBundle {
     fn default() -> Self {
         Self {
-            path_tracer: PulsePathTracer { test_value: 10.0 },
+            path_tracer: PulsePathTracer::default(),
             camera: Camera {
                 hdr: true,
                 ..default()

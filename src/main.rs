@@ -23,12 +23,9 @@ fn main() {
         PulsePlugin,
         PulsePathTracerPlugin,
         CameraControllerPlugin,
-        // FrameTimeDiagnosticsPlugin,
-        // SystemInformationDiagnosticsPlugin,
-        // LogDiagnosticsPlugin::default(),
     ))
     .add_systems(Startup, setup)
-    .add_systems(Update, update_meshes)
+    // .add_systems(Update, update_meshes)
     .run();
 }
 
@@ -36,6 +33,7 @@ fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut mesh_assets: ResMut<Assets<Mesh>>,
+    mut mat_assets: ResMut<Assets<StandardMaterial>>,
 ) {
     // suppose Y-up right hand, and camera look from +z to -z
     let vertices = &[
@@ -83,7 +81,7 @@ fn setup(
     let monkey = asset_server.load("monkey_smooth.glb#Scene0");
 
     let step_size = 3.0;
-    let resolution = 16;
+    let resolution = 0;
     for x in 0..resolution {
         for z in 0..resolution {
             let transform = Transform::from_xyz(x as f32 * step_size, 0.0, z as f32 * step_size)
@@ -103,8 +101,33 @@ fn setup(
     // });
 
     commands.spawn(PbrBundle {
-        mesh: mesh_assets.add(Mesh::from(shape::Cube { size: 1.0 })),
-        transform: Transform::from_translation(Vec3::new(2.0, 0.0, -3.0)),
+        mesh: mesh_assets.add(
+            Mesh::try_from(shape::Icosphere {
+                radius: 0.9,
+                subdivisions: 5,
+            })
+            .unwrap(),
+        ),
+        material: mat_assets.add(StandardMaterial {
+            base_color: Color::rgba(1.0, 0.0, 0.0, 1.0),
+            emissive: Color::rgba(0.0, 0.0, 0.0, 0.0),
+            ..default()
+        }),
+        transform: Transform::from_translation(Vec3::new(0.0, 0.0, -3.0)),
+        ..default()
+    });
+
+    commands.spawn(PbrBundle {
+        mesh: mesh_assets.add(Mesh::from(shape::Plane {
+            size: 10.0,
+            subdivisions: 0,
+        })),
+        material: mat_assets.add(StandardMaterial {
+            base_color: Color::rgba(0.0, 1.0, 0.0, 1.0),
+            emissive: Color::rgba(0.0, 0.0, 0.0, 0.0),
+            ..default()
+        }),
+        transform: Transform::from_translation(Vec3::new(0.0, -1.0, -3.0)),
         ..default()
     });
 
