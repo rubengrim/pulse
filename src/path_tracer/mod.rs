@@ -3,7 +3,7 @@ use std::sync::{
     Arc,
 };
 
-use crate::{PulseRenderTarget, PULSE_GRAPH};
+use crate::{PulsePathTracerAccumulationRenderTarget, PulseRenderTarget, PULSE_GRAPH};
 use bevy::{
     asset::load_internal_asset,
     prelude::*,
@@ -124,7 +124,28 @@ pub fn prepare_render_targets(
                 &device,
             );
 
-            commands.entity(entity).insert(render_target);
+            let acc_texture = texture_cache.get(
+                &device,
+                TextureDescriptor {
+                    label: None,
+                    size: Extent3d {
+                        width: target_size.x,
+                        height: target_size.y,
+                        ..default()
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: TextureDimension::D2,
+                    format: PulseRenderTarget::TEXTURE_FORMAT,
+                    usage: TextureUsages::STORAGE_BINDING,
+                    view_formats: &[PulseRenderTarget::TEXTURE_FORMAT],
+                },
+            );
+
+            commands.entity(entity).insert((
+                render_target,
+                PulsePathTracerAccumulationRenderTarget(acc_texture),
+            ));
         }
     }
 }

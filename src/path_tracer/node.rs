@@ -4,7 +4,7 @@ use crate::{
     path_tracer::pipeline::{PulsePathTracerPipeline, PulsePathTracerPipelineId},
     scene::PulseSceneBindGroup,
     utilities::*,
-    PulseRenderTarget,
+    PulsePathTracerAccumulationRenderTarget, PulseRenderTarget,
 };
 use bevy::{
     ecs::query::QueryItem,
@@ -29,6 +29,7 @@ impl ViewNode for PulsePathTracerNode {
     type ViewQuery = (
         &'static PulsePathTracer,
         &'static PulseRenderTarget,
+        &'static PulsePathTracerAccumulationRenderTarget, // Hack for now
         &'static PulsePathTracerPipelineId,
         &'static ViewUniformOffset,
     );
@@ -39,7 +40,9 @@ impl ViewNode for PulsePathTracerNode {
         &self,
         _graph: &mut RenderGraphContext,
         render_context: &mut RenderContext,
-        (pulse_path_tracer, render_target, pipeline_id, view_offset): QueryItem<Self::ViewQuery>,
+        (pulse_path_tracer, render_target, acc_texture, pipeline_id, view_offset): QueryItem<
+            Self::ViewQuery,
+        >,
         world: &World,
     ) -> Result<(), NodeRunError> {
         let pulse_pipeline = world.resource::<PulsePathTracerPipeline>();
@@ -76,11 +79,15 @@ impl ViewNode for PulsePathTracerNode {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::TextureView(render_target.view()),
+                    resource: path_tracer_uniform.into_binding(),
                 },
                 BindGroupEntry {
                     binding: 2,
-                    resource: path_tracer_uniform.into_binding(),
+                    resource: BindingResource::TextureView(render_target.view()),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::TextureView(&acc_texture.0.default_view),
                 },
             ],
         );

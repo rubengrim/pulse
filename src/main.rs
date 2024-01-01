@@ -1,3 +1,5 @@
+use std::f32::consts::PI;
+
 use bevy::{
     prelude::*,
     render::{
@@ -37,17 +39,14 @@ fn setup(
 ) {
     // suppose Y-up right hand, and camera look from +z to -z
     let vertices = &[
-        // Plane
-        // ([-1.0, 1.0, -3.0], [0., 0., 1.0], [0., 0.]),
-        // ([1.0, 1.0, -3.0], [0., 0., 1.0], [1.0, 0.]),
-        // ([1.0, -1.0, -3.0], [0., 0., 1.0], [1.0, 1.0]),
-        // ([-1.0, -1.0, -3.0], [0., 0., 1.0], [0., 1.0]),
-        ([-2.0, 0.0, -3.0], [0.0, 0.0, 1.0], [0.0, 0.0]),
-        ([-1.0, 1.0, -3.0], [0.0, 0.0, 1.0], [0.0, 0.0]),
-        ([-2.0, 1.0, -3.0], [0.0, 0.0, 1.0], [0.0, 0.0]),
-        ([1.0, 0.0, -3.0], [0.0, 0.0, 1.0], [0.0, 0.0]),
-        ([2.0, 1.0, -3.0], [0.0, 0.0, 1.0], [0.0, 0.0]),
-        ([1.0, 1.0, -3.0], [0.0, 0.0, 1.0], [0.0, 0.0]),
+        ([-1.0, 0.0, 1.0], [0., 0., 1.0], [0., 0.]),
+        ([1.0, 0.0, 1.0], [0., 0., 1.0], [1.0, 0.]),
+        ([1.0, 0.0, -1.0], [0., 0., 1.0], [1.0, 1.0]),
+        ([-1.0, 0.0, -1.0], [0., 0., 1.0], [0., 1.0]),
+        // ([-1.0, 1.0, 0.0], [0., 0., 1.0], [0., 0.]),
+        // ([1.0, 1.0, 0.0], [0., 0., 1.0], [1.0, 0.]),
+        // ([1.0, -1.0, 0.0], [0., 0., 1.0], [1.0, 1.0]),
+        // ([-1.0, -1.0, 0.0], [0., 0., 1.0], [0., 1.0]),
     ];
 
     let positions: Vec<_> = vertices.iter().map(|(p, _, _)| *p).collect();
@@ -55,8 +54,7 @@ fn setup(
     let uvs: Vec<_> = vertices.iter().map(|(_, _, uv)| *uv).collect();
 
     let indices = Indices::U32(vec![
-        0, 1, 2, 3, 4, 5,
-        // 2, 3, 0,
+        0, 1, 2, 2, 3, 0, // 2, 3, 0,
     ]);
 
     let _mesh = Mesh::new(PrimitiveTopology::TriangleList)
@@ -68,6 +66,8 @@ fn setup(
     // let m = mesh_assets.add(mesh);
     // commands.spawn(PbrBundle {
     //     mesh: m.clone(),
+    //     transform: Transform::from_translation(Vec3::new(0.0, 0.0, 0.0))
+    //         .with_rotation(Quat::from_euler(EulerRot::XYZ, 0.0, 0.0, PI / 2.0)),
     //     ..default()
     // });
 
@@ -81,7 +81,7 @@ fn setup(
     let monkey = asset_server.load("monkey_smooth.glb#Scene0");
 
     let step_size = 3.0;
-    let resolution = 0;
+    let resolution = 1;
     for x in 0..resolution {
         for z in 0..resolution {
             let transform = Transform::from_xyz(x as f32 * step_size, 0.0, z as f32 * step_size)
@@ -110,10 +110,27 @@ fn setup(
         ),
         material: mat_assets.add(StandardMaterial {
             base_color: Color::rgba(1.0, 0.0, 0.0, 1.0),
-            emissive: Color::rgba(0.0, 0.0, 0.0, 0.0),
+            emissive: Color::BLACK,
             ..default()
         }),
         transform: Transform::from_translation(Vec3::new(0.0, 0.0, -3.0)),
+        ..default()
+    });
+
+    commands.spawn(PbrBundle {
+        mesh: mesh_assets.add(
+            Mesh::try_from(shape::Icosphere {
+                radius: 2.0,
+                subdivisions: 2,
+            })
+            .unwrap(),
+        ),
+        material: mat_assets.add(StandardMaterial {
+            base_color: Color::rgba(1.0, 0.0, 0.0, 1.0),
+            emissive: Color::WHITE,
+            ..default()
+        }),
+        transform: Transform::from_translation(Vec3::new(-4.0, 0.0, -2.0)),
         ..default()
     });
 
@@ -127,7 +144,7 @@ fn setup(
             emissive: Color::rgba(0.0, 0.0, 0.0, 0.0),
             ..default()
         }),
-        transform: Transform::from_translation(Vec3::new(0.0, -1.0, -3.0)),
+        transform: Transform::from_translation(Vec3::new(0.0, -1.0, 0.0)),
         ..default()
     });
 
@@ -166,7 +183,7 @@ fn setup(
         commands.spawn((
             Camera3dBundle {
                 camera_render_graph: CameraRenderGraph::new(PULSE_GRAPH),
-                transform: Transform::from_xyz(0.0, 0.0, 2.0),
+                transform: Transform::from_xyz(0.0, 0.0, 10.0),
                 camera: Camera {
                     hdr: true,
                     ..default()

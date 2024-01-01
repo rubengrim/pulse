@@ -31,8 +31,9 @@ struct PathTracerUniform {
 }
 
 @group(1) @binding(0) var<uniform> view: View;
-@group(1) @binding(1) var output_texture: texture_storage_2d<rgba16float, read_write>;
-@group(1) @binding(2) var<uniform> path_tracer_uniform: PathTracerUniform;
+@group(1) @binding(1) var<uniform> path_tracer_uniform: PathTracerUniform;
+@group(1) @binding(2) var output_texture: texture_storage_2d<rgba16float, read_write>;
+@group(1) @binding(3) var accumulation_texture: texture_storage_2d<rgba16float, read_write>;
 
 
 @compute @workgroup_size(16, 16, 1)
@@ -45,7 +46,7 @@ fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
     // Clip position goes from -1 to 1.
     let pixel_clip_pos = (pixel_uv * 2.0) - 1.0;
     let ray_target = view.inverse_view_proj * vec4<f32>(pixel_clip_pos.x, -pixel_clip_pos.y, 1.0, 1.0);
-    var ray = Ray();
+    var ray = Ray(); // Should always be kept in world space.
     ray.origin = view.world_position;
     ray.dir = normalize((ray_target.xyz / ray_target.w) - ray.origin);
     let t_far = 1e30;
@@ -53,7 +54,7 @@ fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
 
     var throughput = vec3f(1.0);
     var color_out = vec3f(0.0);
-    let max_depth: u32 = 1u;
+    let max_depth: u32 = 2u;
     for (var depth: u32 = 0u; depth < max_depth; depth += 1u){    
         trace_ray_tlas(&ray);
         if ray.record.t >= t_far  {
@@ -68,21 +69,33 @@ fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
             let w = 1.0 - (ray.record.u + ray.record.v);
             let normal = w * t.n_first + ray.record.u * t.n_second + ray.record.v * t.n_third;
             let world_normal = normalize(transform_direction(instance.object_world, normal));
-            let world_hit_position = transform_position(instance.object_world, ray.origin + ray.record.t * ray.dir);
+            let world_hit_position = ray.origin + ray.record.t * ray.dir;
 
             let material_index = instance.material_index;
-            color_out = materials[material_index].base_color.xyz;
+            let material = materials[material_index];
 
-            // let scatter_dir = sample_hemisphere_rejection(world_normal, &rng_state);
-            let scatter_dir = sample_cosine_hemisphere_solari(world_normal, &rng_state);
+            color_out += throughput * material.emissive.xyz * 10.0;
+            throughput *= material.base_color.xyz;
+
+            let p = max(max(throughput.r, throughput.g), throughput.b);
+            if rand_f(&rng_state) > p { 
+                break; 
+            }
+            throughput *= 1.0 / p;
+
+            let scatter_dir = sample_hemisphere_rejection(world_normal, &rng_state);
+            // let scatter_dir = sample_cosine_hemisphere_solari(world_normal, &rng_state);
             // let scatter_dir = scatter_mirror(ray.dir, world_normal);
             ray.dir = normalize(scatter_dir);
             ray.origin = world_hit_position + 0.001 * world_normal;
             ray.record = RayHitRecord(t_far, 0u, 0u, 0.0, 0.0);
         }
     }  
+    let old_color = textureLoad(accumulation_texture, id.xy).rgb;
+    let new_color = vec4f((color_out + f32(path_tracer_uniform.sample_accumulation_count) * old_color) / (f32(path_tracer_uniform.sample_accumulation_count) + 1.0), 1.0);
 
-    textureStore(output_texture, id.xy, vec4f(color_out, 1.0));
+    textureStore(accumulation_texture, id.xy, new_color);
+    textureStore(output_texture, id.xy, new_color);
 }
 
 fn trace_ray_tlas(ray: ptr<function, Ray>) {
@@ -96,27 +109,11 @@ fn trace_ray(ray: ptr<function, Ray>)  {
 
 }
 
-// fn trace_ray(ray: ptr<function, Ray>)  {
-//     for (var i = 0u; i < scene_uniform.instance_count; i += 1u) {
-//         let instance = instances[i];
-//         // Transform to object space
-//         var ray_object = *ray;
-//         let origin_object = instance.world_object * vec4f(ray_object.origin, 1.0);
-//         ray_object.origin = origin_object.xyz / origin_object.w;
-//         ray_object.dir = normalize((instance.world_object * vec4f(ray_object.dir, 0.0)).xyz);
-//         traverse_blas(&ray_object, i);
+fn trace_ray_brute(ray: ptr<function, Ray>)  {
+    for (var i = 0u; i < scene_uniform.instance_count; i += 1u) {
 
-//         if ray_object.record.t < (*ray).record.t {
-//             // Back to world space
-//             let world_hit_position_h = instance.object_world * vec4f(ray_object.origin + ray_object.record.t * ray_object.dir, 1.0);
-//             let world_hit_position = world_hit_position_h.xyz / world_hit_position_h.w;
-//             var world_normal = normalize((instance.object_world * vec4f(ray_object.record.normal, 0.0)).xyz);
-//             (*ray).record.t = length(world_hit_position - (*ray).origin);
-//             (*ray).record.position = world_hit_position;
-//             (*ray).record.normal = normalize(world_normal);
-//         }
-//     }
-// }
+    }
+}
 
 fn get_blas_node(index: u32, instance_index: u32) -> BLASNode {
     let instance = instances[instance_index];
@@ -211,9 +208,11 @@ fn traverse_tlas(ray: ptr<function, Ray>) {
 fn traverse_blas(ray: ptr<function, Ray>, instance_index: u32) {
     // Transform ray to object/blas space.
     let instance = instances[instance_index];
-    var ray_object = *ray;
-    ray_object.origin = transform_position(instance.world_object, ray_object.origin);
-    ray_object.dir = transform_direction(instance.world_object, ray_object.dir);
+    var ray_object = Ray();
+    ray_object.origin = transform_position(instance.world_object, (*ray).origin);
+    ray_object.dir = normalize(transform_direction(instance.world_object, (*ray).dir));
+    let t_far = 1e30;
+    ray_object.record = RayHitRecord(t_far, 0u, 0u, 0.0, 0.0);
 
     var node_index = 0u;
     var stack: array<u32, 32>;
@@ -266,22 +265,13 @@ fn traverse_blas(ray: ptr<function, Ray>, instance_index: u32) {
         }
     }
 
-    let hit_position_world = transform_position(instance.object_world, ray_object.origin + ray_object.record.t * ray_object.dir);
+    let hit_position_object = ray_object.origin + ray_object.record.t * ray_object.dir;
+    let hit_position_world = transform_position(instance.object_world, hit_position_object);
     let new_t_world = length(hit_position_world - (*ray).origin);
     if new_t_world < (*ray).record.t {
         (*ray).record = ray_object.record;
         (*ray).record.t = new_t_world;
-    }  
-
-    // if ray_object.record.t < (*ray).record.t {
-    //     // Transform ray back to world space.
-    //     let world_hit_position_h = instance.object_world * vec4f(ray_object.origin + ray_object.record.t * ray_object.dir, 1.0);
-    //     let world_hit_position = world_hit_position_h.xyz / world_hit_position_h.w;
-    //     var world_normal = normalize((instance.object_world * vec4f(ray_object.record.normal, 0.0)).xyz);
-    //     (*ray).record.t = length(world_hit_position - (*ray).origin);
-    //     (*ray).record.position = world_hit_position;
-    //     (*ray).record.normal = normalize(world_normal);
-    // }
+    }
 }
 
 fn ray_aabb_intersect(ray: ptr<function, Ray>, aabb_min: vec3<f32>, aabb_max: vec3<f32>) -> f32 {

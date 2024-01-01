@@ -31,9 +31,20 @@ impl FromWorld for PulsePathTracerPipeline {
                     },
                     count: None,
                 },
-                // Output texture view
+                // Path tracer uniform
                 BindGroupLayoutEntry {
                     binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(PulsePathTracerUniform::min_size()),
+                    },
+                    count: None,
+                },
+                // Output texture view
+                BindGroupLayoutEntry {
+                    binding: 2,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::ReadWrite,
@@ -42,14 +53,14 @@ impl FromWorld for PulsePathTracerPipeline {
                     },
                     count: None,
                 },
-                // Path tracer uniform
+                // Accumulation texture view
                 BindGroupLayoutEntry {
-                    binding: 2,
+                    binding: 3,
                     visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(PulsePathTracerUniform::min_size()),
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::ReadWrite,
+                        format: PulseRenderTarget::TEXTURE_FORMAT,
+                        view_dimension: TextureViewDimension::D2,
                     },
                     count: None,
                 },

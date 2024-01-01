@@ -80,6 +80,9 @@ impl Plugin for PulsePlugin {
 }
 
 #[derive(Component)]
+pub struct PulsePathTracerAccumulationRenderTarget(pub CachedTexture);
+
+#[derive(Component)]
 pub struct PulseRenderTarget {
     texture: CachedTexture,
     width: u32,
