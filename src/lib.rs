@@ -90,7 +90,7 @@ pub struct PulseRenderTarget {
 }
 
 impl PulseRenderTarget {
-    pub const TEXTURE_FORMAT: TextureFormat = ViewTarget::TEXTURE_FORMAT_HDR;
+    pub const TEXTURE_FORMAT: TextureFormat = TextureFormat::Rgba32Float;
 
     fn view(&self) -> &TextureView {
         &self.texture.default_view

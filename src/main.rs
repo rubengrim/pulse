@@ -78,7 +78,7 @@ fn setup(
     // });
 
     // note that we have to include the `Scene0` label
-    let monkey = asset_server.load("monkey_smooth.glb#Scene0");
+    let monkey = asset_server.load("monkey_blue.glb#Scene0");
 
     let step_size = 3.0;
     let resolution = 1;

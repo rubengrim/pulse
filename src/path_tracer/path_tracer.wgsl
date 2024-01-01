@@ -32,8 +32,8 @@ struct PathTracerUniform {
 
 @group(1) @binding(0) var<uniform> view: View;
 @group(1) @binding(1) var<uniform> path_tracer_uniform: PathTracerUniform;
-@group(1) @binding(2) var output_texture: texture_storage_2d<rgba16float, read_write>;
-@group(1) @binding(3) var accumulation_texture: texture_storage_2d<rgba16float, read_write>;
+@group(1) @binding(2) var output_texture: texture_storage_2d<rgba32float, read_write>;
+@group(1) @binding(3) var accumulation_texture: texture_storage_2d<rgba32float, read_write>;
 
 
 @compute @workgroup_size(16, 16, 1)

@@ -4,7 +4,7 @@ struct PulseRenderTargetUniform {
 }
 
 @group(0) @binding(0) var<uniform> pulse_target: PulseRenderTargetUniform;
-@group(0) @binding(1) var output_texture: texture_storage_2d<rgba16float, read_write>;
+@group(0) @binding(1) var output_texture: texture_storage_2d<rgba32float, read_write>;
 
 struct UpscalingVertexOutput {
     @builtin(position)
