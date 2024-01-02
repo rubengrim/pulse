@@ -27,7 +27,7 @@
 const PI: f32 = 3.141592653589793;
 
 struct PathTracerUniform {
-    sample_accumulation_count: u32,
+    previous_sample_count: u32,
 }
 
 @group(1) @binding(0) var<uniform> view: View;
@@ -39,9 +39,9 @@ struct PathTracerUniform {
 @compute @workgroup_size(16, 16, 1)
 fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
     let pixel_index = id.x + id.y * u32(view.viewport.z);
-    var rng_state = pixel_index + path_tracer_uniform.sample_accumulation_count * 5817321u;
+    var rng_state = pixel_index + path_tracer_uniform.previous_sample_count * 5817321u;
 
-    let pixel_jitter = rand_f_pair(&rng_state) / view.viewport.zw;
+    let pixel_jitter = rand_f_pair(&rng_state);
     var pixel_uv = (vec2<f32>(id.xy) + pixel_jitter) / view.viewport.zw;
     // Clip position goes from -1 to 1.
     let pixel_clip_pos = (pixel_uv * 2.0) - 1.0;
@@ -54,7 +54,7 @@ fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
 
     var throughput = vec3f(1.0);
     var color_out = vec3f(0.0);
-    let max_depth: u32 = 2u;
+    let max_depth: u32 = 3u;
     for (var depth: u32 = 0u; depth < max_depth; depth += 1u){    
         trace_ray_tlas(&ray);
         if ray.record.t >= t_far  {
@@ -92,7 +92,9 @@ fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
         }
     }  
     let old_color = textureLoad(accumulation_texture, id.xy).rgb;
-    let new_color = vec4f((color_out + f32(path_tracer_uniform.sample_accumulation_count) * old_color) / (f32(path_tracer_uniform.sample_accumulation_count) + 1.0), 1.0);
+    // let new_color = vec4f((color_out + f32(path_tracer_uniform.previous_sample_count) * old_color) / (f32(path_tracer_uniform.sample_accumulation_count) + 1.0), 1.0);
+    let weight = 1.0 / (f32(path_tracer_uniform.previous_sample_count) + 1.0);
+    let new_color = vec4f(old_color * (1.0 - weight) + color_out * weight, 1.0);
 
     textureStore(accumulation_texture, id.xy, new_color);
     textureStore(output_texture, id.xy, new_color);
