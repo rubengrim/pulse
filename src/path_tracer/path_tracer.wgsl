@@ -42,7 +42,7 @@ fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
     var rng_state = pixel_index + path_tracer_uniform.sample_accumulation_count * 5817321u;
 
     let pixel_jitter = rand_f_pair(&rng_state) / view.viewport.zw;
-    var pixel_uv = (vec2<f32>(id.xy) + 0.5) / view.viewport.zw;
+    var pixel_uv = (vec2<f32>(id.xy) + pixel_jitter) / view.viewport.zw;
     // Clip position goes from -1 to 1.
     let pixel_clip_pos = (pixel_uv * 2.0) - 1.0;
     let ray_target = view.inverse_view_proj * vec4<f32>(pixel_clip_pos.x, -pixel_clip_pos.y, 1.0, 1.0);
