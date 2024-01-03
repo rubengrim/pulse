@@ -43,6 +43,9 @@ struct MeshInstance {
 struct Material {
     base_color: vec4f,
     emissive: vec4f,
+    perceptual_roughness: f32,
+    reflectance: f32,
+    metallic: f32,
 }
 
 struct SceneUniform {

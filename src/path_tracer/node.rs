@@ -60,8 +60,8 @@ impl ViewNode for PulsePathTracerNode {
         let queue = world.resource::<RenderQueue>();
         let path_tracer_uniform = create_uniform_buffer(
             PulsePathTracerUniform {
-                sample_accumulation_count: pulse_path_tracer
-                    .sample_accumulation_count
+                previous_sample_count: pulse_path_tracer
+                    .sample_count
                     .fetch_add(1, Ordering::SeqCst),
             },
             Some("pulse_path_tracer_uniform_buffer"),

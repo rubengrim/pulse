@@ -195,6 +195,9 @@ fn extract_material_assets(
 pub struct PulseMaterial {
     pub base_color: Vec4,
     pub emissive: Vec4,
+    pub perceptual_roughness: f32,
+    pub reflectance: f32,
+    pub metallic: f32,
 }
 
 #[derive(Resource, Default, Deref, DerefMut)]
@@ -208,6 +211,9 @@ fn prepare_extracted_material_assets(
         let pulse_material = PulseMaterial {
             base_color: material.base_color.into(),
             emissive: material.emissive.into(),
+            perceptual_roughness: material.perceptual_roughness,
+            reflectance: material.reflectance,
+            metallic: material.metallic,
         };
 
         materials.insert(id.clone(), pulse_material);

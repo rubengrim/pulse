@@ -62,21 +62,19 @@ impl Plugin for PulsePathTracerPlugin {
 
 #[derive(ShaderType)]
 pub struct PulsePathTracerUniform {
-    pub sample_accumulation_count: u32,
+    pub previous_sample_count: u32,
 }
 
 #[derive(Component, Default, Clone, ExtractComponent)]
 pub struct PulsePathTracer {
-    pub sample_accumulation_count: Arc<AtomicU32>,
+    pub sample_count: Arc<AtomicU32>,
     pub last_transform: GlobalTransform,
 }
 
 fn reset_accumulation_on_movement(mut views: Query<(&GlobalTransform, &mut PulsePathTracer)>) {
     for (current_transform, mut path_tracer) in views.iter_mut() {
         if *current_transform != path_tracer.last_transform {
-            path_tracer
-                .sample_accumulation_count
-                .store(0, Ordering::SeqCst);
+            path_tracer.sample_count.store(0, Ordering::SeqCst);
             path_tracer.last_transform = *current_transform;
         }
     }

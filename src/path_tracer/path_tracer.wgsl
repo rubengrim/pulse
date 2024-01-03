@@ -24,7 +24,9 @@
 }
 #import bevy_render::view::View
 
-const PI: f32 = 3.141592653589793;
+const PI: f32 = 3.14159265358;
+const TWO_PI: f32 = 6.28318530718;
+const INV_PI: f32 = 0.31830988618;
 
 struct PathTracerUniform {
     previous_sample_count: u32,
@@ -52,14 +54,16 @@ fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
     let t_far = 1e30;
     ray.record = RayHitRecord(t_far, 0u, 0u, 0.0, 0.0);
 
+
     var throughput = vec3f(1.0);
-    var color_out = vec3f(0.0);
+    var color = vec3f(0.0);
     let max_depth: u32 = 3u;
     for (var depth: u32 = 0u; depth < max_depth; depth += 1u){    
         trace_ray_tlas(&ray);
         if ray.record.t >= t_far  {
             // Miss
-            color_out += throughput * vec3<f32>(0.0, 0.3, 0.3);
+            // color += throughput * vec3<f32>(0.0, 0.7, 1.0) * 0.01;
+            color += throughput * vec3<f32>(1.0, 1.0, 1.0) * 0.01;
             break;
         } else {
             // Hit
@@ -72,10 +76,24 @@ fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
             let world_hit_position = ray.origin + ray.record.t * ray.dir;
 
             let material_index = instance.material_index;
-            let material = materials[material_index];
+            var material = materials[material_index];
 
-            color_out += throughput * material.emissive.xyz * 10.0;
-            throughput *= material.base_color.xyz;
+            // material.perceptual_roughness = 1.0;
+            // material.base_color = vec4f(1.0, 0.0, 0.0, 1.0);
+            // material.metallic = 0.0;
+            // material.reflectance = 0.0;
+
+            color += throughput * material.emissive.xyz;
+
+            // let clamped_perceptual_roughness = clamp(material.perceptual_roughness, 0.089, 1.0);
+            // let roughness = clamped_perceptual_roughness * clamped_perceptual_roughness;
+            // let microfacet_normal = sample_D_GGX_half(-ray.dir, world_normal, roughness, &rng_state);
+            // let pdf = pdf_D_GGX(-ray.dir, microfacet_normal.direction, microfacet_normal.theta, microfacet_normal.theta, roughness);
+            // let scatter_dir = scatter_mirror(-ray.dir, microfacet_normal.direction);
+            // throughput *= cook_torrence_evaluate(scatter_dir, -ray.dir, world_normal, material) * pdf;
+
+            let scatter_dir = sample_hemisphere_rejection(world_normal, &rng_state);
+            throughput *= cook_torrence_evaluate(scatter_dir, -ray.dir, world_normal, material) * (PI / 2.0);
 
             let p = max(max(throughput.r, throughput.g), throughput.b);
             if rand_f(&rng_state) > p { 
@@ -83,22 +101,83 @@ fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
             }
             throughput *= 1.0 / p;
 
-            let scatter_dir = sample_hemisphere_rejection(world_normal, &rng_state);
-            // let scatter_dir = sample_cosine_hemisphere_solari(world_normal, &rng_state);
-            // let scatter_dir = scatter_mirror(ray.dir, world_normal);
             ray.dir = normalize(scatter_dir);
             ray.origin = world_hit_position + 0.001 * world_normal;
             ray.record = RayHitRecord(t_far, 0u, 0u, 0.0, 0.0);
         }
-    }  
+    }
+    // color = clamp_v(color, 0.0, 1.0);
     let old_color = textureLoad(accumulation_texture, id.xy).rgb;
-    // let new_color = vec4f((color_out + f32(path_tracer_uniform.previous_sample_count) * old_color) / (f32(path_tracer_uniform.sample_accumulation_count) + 1.0), 1.0);
     let weight = 1.0 / (f32(path_tracer_uniform.previous_sample_count) + 1.0);
-    let new_color = vec4f(old_color * (1.0 - weight) + color_out * weight, 1.0);
+    let new_color = vec4f(old_color * (1.0 - weight) + color * weight, 1.0);
 
     textureStore(accumulation_texture, id.xy, new_color);
-    textureStore(output_texture, id.xy, new_color);
+    textureStore(output_texture, id.xy, sqrt(new_color));
 }
+
+// NOTE: ONLY DIFFUSE
+// @compute @workgroup_size(16, 16, 1)
+// fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
+//     let pixel_index = id.x + id.y * u32(view.viewport.z);
+//     var rng_state = pixel_index + path_tracer_uniform.previous_sample_count * 5817321u;
+
+//     let pixel_jitter = rand_f_pair(&rng_state);
+//     var pixel_uv = (vec2<f32>(id.xy) + pixel_jitter) / view.viewport.zw;
+//     // Clip position goes from -1 to 1.
+//     let pixel_clip_pos = (pixel_uv * 2.0) - 1.0;
+//     let ray_target = view.inverse_view_proj * vec4<f32>(pixel_clip_pos.x, -pixel_clip_pos.y, 1.0, 1.0);
+//     var ray = Ray(); // Should always be kept in world space.
+//     ray.origin = view.world_position;
+//     ray.dir = normalize((ray_target.xyz / ray_target.w) - ray.origin);
+//     let t_far = 1e30;
+//     ray.record = RayHitRecord(t_far, 0u, 0u, 0.0, 0.0);
+
+//     var throughput = vec3f(1.0);
+//     var color = vec3f(0.0);
+//     let max_depth: u32 = 3u;
+//     for (var depth: u32 = 0u; depth < max_depth; depth += 1u){    
+//         trace_ray_tlas(&ray);
+//         if ray.record.t >= t_far  {
+//             // Miss
+//             color += throughput * vec3<f32>(0.0, 0.3, 0.3);
+//             break;
+//         } else {
+//             // Hit
+//             let instance = instances[ray.record.instance_index];
+//             let t_idx = triangle_indices[instance.index_offset + ray.record.triangle_index];
+//             let t = triangle_data[instance.triangle_offset + t_idx];
+//             let w = 1.0 - (ray.record.u + ray.record.v);
+//             let normal = w * t.n_first + ray.record.u * t.n_second + ray.record.v * t.n_third;
+//             let world_normal = normalize(transform_direction(instance.object_world, normal));
+//             let world_hit_position = ray.origin + ray.record.t * ray.dir;
+
+//             let material_index = instance.material_index;
+//             let material = materials[material_index];
+
+//             color += throughput * material.emissive.xyz * 10.0;
+//             throughput *= material.base_color.xyz;
+
+//             let p = max(max(throughput.r, throughput.g), throughput.b);
+//             if rand_f(&rng_state) > p { 
+//                 break; 
+//             }
+//             throughput *= 1.0 / p;
+
+//             let scatter_dir = sample_hemisphere_rejection(world_normal, &rng_state);
+//             // let scatter_dir = sample_cosine_hemisphere_solari(world_normal, &rng_state);
+//             // let scatter_dir = scatter_mirror(ray.dir, world_normal);
+//             ray.dir = normalize(scatter_dir);
+//             ray.origin = world_hit_position + 0.001 * world_normal;
+//             ray.record = RayHitRecord(t_far, 0u, 0u, 0.0, 0.0);
+//         }
+//     }  
+//     let old_color = textureLoad(accumulation_texture, id.xy).rgb;
+//     let weight = 1.0 / (f32(path_tracer_uniform.previous_sample_count) + 1.0);
+//     let new_color = vec4f(old_color * (1.0 - weight) + color_out * weight, 1.0);
+
+//     textureStore(accumulation_texture, id.xy, new_color);
+//     textureStore(output_texture, id.xy, new_color);
+// }
 
 fn trace_ray_tlas(ray: ptr<function, Ray>) {
     traverse_tlas(ray);
@@ -353,6 +432,10 @@ fn ray_triangle_intersect(ray: ptr<function, Ray>, triangle_index: u32, instance
     }
 }
 
+fn clamp_v(v: vec3f, min: f32, max: f32) -> vec3f {
+    return vec3f(clamp(v.x, min, max), clamp(v.y, min, max), clamp(v.z, min, max));
+}
+
 fn transform_position(m: mat4x4f, p: vec3f) -> vec3f {
     let h = m * vec4f(p, 1.0);
     return h.xyz / h.w;
@@ -390,6 +473,65 @@ fn rand_range_u(n: u32, state: ptr<function, u32>) -> u32 {
     return rand_u(state) % n;
 }
 
+struct ON {
+    e1: vec3f,
+    e2: vec3f,
+    e3: vec3f,
+}
+
+// Produces right-handed with `e3` aligned to `normal`
+fn orthonormal_from_normal(normal: vec3f) -> ON {
+    let e3 = normal;
+    var e2: vec3f;
+    if dot(e3, vec3f(1.0, 0.0, 0.0)) != 0.0 {
+        e2 = normalize(cross(e3, vec3f(1.0, 0.0, 0.0)));
+    } else {
+        e2 = normalize(cross(e3, vec3f(0.0, 1.0, 0.0)));
+    }
+    let e1 = normalize(cross(e3, e2));
+    return ON(e1, e2, e3);
+}
+
+// Assumes right-handed with e3 up
+fn spherical_in_orthonormal_to_world(theta: f32, phi: f32, on: ON) -> vec3f {
+    return (on.e1 * sin(theta) * cos(phi)) + (on.e2 * sin(theta) * sin(phi)) + (on.e3 * cos(theta));
+}
+
+// from https://agraphicsguynotes.com/posts/sample_microfacet_brdf/
+// `roughness` is NOT the perceptual roughness in [0.0, 1.0]
+fn pdf_D_GGX(view: vec3f, half: vec3f, theta: f32, phi: f32, roughness: f32) -> f32 {
+    let cos_theta = cos(theta);
+    let denominator = roughness * roughness * cos_theta * sin(theta);
+    let d = (roughness * roughness - 1.0) * cos_theta + 1.0;
+    let numerator = 4.0 * dot(view, half) * PI * d * d;
+    return denominator / numerator;
+}
+
+struct ScatterDirection {
+    // Spherical coordinates in the hit-space half-sphere. 
+    // See `theta` and `phi` in `sample_D_GGX()`
+    theta: f32,
+    phi: f32,
+    // In world space
+    direction: vec3f,
+}
+
+// roughness is NOT the perceptual_roughness in [0.0, 1.0]
+fn sample_D_GGX_half(view: vec3f, normal: vec3f, roughness: f32, state: ptr<function, u32>) -> ScatterDirection {
+    // From https://agraphicsguynotes.com/posts/sample_microfacet_brdf/
+    let e1 = rand_f(state);
+    let e2 = rand_f(state);
+    let theta = atan(sqrt(e1/(1.0-e1)));
+    let phi = e2 * TWO_PI;
+    
+    // Orthonormal basis vectors with e3/z aligned to `normal`
+    let on = orthonormal_from_normal(normal);
+
+    // halfway vector / microfacet normal
+    let half = spherical_in_orthonormal_to_world(theta, phi, on);
+    return ScatterDirection(theta, phi, half);
+}
+
 fn sample_cosine_hemisphere_solari(normal: vec3<f32>, state: ptr<function, u32>) -> vec3<f32> {
     let cos_theta = 2.0 * rand_f(state) - 1.0;
     let phi = 2.0 * PI * rand_f(state);
@@ -401,6 +543,7 @@ fn sample_cosine_hemisphere_solari(normal: vec3<f32>, state: ptr<function, u32>)
 }
 
 
+// Assumes `normal` is of unit length
 fn scatter_mirror(in: vec3f, normal: vec3f) -> vec3f {
     return in - 2.0 * dot(in, normal) * normal;
 }
@@ -419,3 +562,54 @@ fn sample_hemisphere_rejection(normal: vec3f, state: ptr<function, u32>) -> vec3
     }
     return normal;
 }
+
+fn fresnel_schlick(cos_theta: f32, f0: vec3f) -> vec3f {
+    return f0 + (1.0 - f0) * pow(1.0 - cos_theta, 5.0);
+}
+
+fn D_GGX(NoH: f32, roughness: f32) -> f32 {
+    let roughness_sq = roughness * roughness;
+    let NoH_sq = NoH * NoH;
+    let b = (NoH_sq * (roughness_sq - 1.0) + 1.0);
+    return roughness_sq * INV_PI / (b * b);
+}
+
+fn G1_GGX_schlick(NoV: f32, roughness: f32) -> f32 {
+    let k = roughness / 2.0;
+    return NoV / (NoV * (1.0 - k) + k);
+}
+
+fn G_smith(NoV: f32, NoL: f32, roughness: f32) -> f32 {
+    return G1_GGX_schlick(NoL, roughness) * G1_GGX_schlick(NoV, roughness);
+}
+
+// l: light direction, v: view direction, n: geometric normal (not microfacet normal, which is `H`)
+fn cook_torrence_evaluate(L: vec3f, V: vec3f, N: vec3f, material: Material) -> vec3f {
+    let H = normalize(L + V);
+
+    let NoV = clamp(dot(N, V), 0.001, 1.0);
+    let NoL = clamp(dot(N, L), 0.001, 1.0);
+    let NoH = clamp(dot(N, H), 0.001, 1.0);
+    let VoH = clamp(dot(V, H), 0.001, 1.0);
+
+    var f0 = vec3f(0.16 * material.reflectance * material.reflectance);
+    f0 = f0 * (1.0 - material.metallic) + material.base_color.rgb * material.metallic;
+
+    let clamped_perceptual_roughness = clamp(material.perceptual_roughness, 0.089, 1.0);
+    let roughness = clamped_perceptual_roughness * clamped_perceptual_roughness;
+
+    let F = fresnel_schlick(VoH, f0);
+    let D = D_GGX(NoH, roughness);
+    let G = G_smith(NoV, NoL, roughness);
+
+    let specular = (F * D * G) / (4.0 * NoV * NoL);
+
+    var rhoD = material.base_color.rgb;
+    rhoD *= vec3f(1.0) - F;
+    rhoD *= (1.0 - material.metallic);
+
+    let diffuse = rhoD * INV_PI;
+
+    return diffuse + specular;
+}
+
