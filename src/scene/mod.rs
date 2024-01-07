@@ -176,7 +176,7 @@ fn extract_material_assets(
         match event {
             AssetEvent::Added { id } | AssetEvent::Modified { id } => {
                 if let Some(material) = material_assets.get(*id) {
-                    info!("Extracted material with id {:?}", id);
+                    // info!("Extracted material with id {:?}", id);
                     new_or_modified.push((id.clone(), material.clone()));
                 }
             }
@@ -273,7 +273,7 @@ fn extract_mesh_assets(
         match event {
             AssetEvent::Added { id } | AssetEvent::Modified { id } => {
                 if let Some(mesh) = mesh_assets.get(*id) {
-                    info!("Extracted mesh with id {:?}", id);
+                    // info!("Extracted mesh with id {:?}", id);
                     new_or_modified.push((id.clone(), mesh.clone()));
                 }
             }
@@ -363,14 +363,14 @@ fn prepare_extracted_mesh_assets(
             })
         }
 
-        let blas_time_begin = Instant::now();
+        // let blas_time_begin = Instant::now();
         let bvh = build_blas(&primitives);
-        info!(
-            "Built BLAS for mesh id:{:?} with triangle count {:?} in {:.3?}",
-            id,
-            primitives.len(),
-            blas_time_begin.elapsed(),
-        );
+        // info!(
+        //     "Built BLAS for mesh id:{:?} with triangle count {:?} in {:.3?}",
+        //     id,
+        //     primitives.len(),
+        //     blas_time_begin.elapsed(),
+        // );
 
         meshes.0.insert(
             id.clone(),

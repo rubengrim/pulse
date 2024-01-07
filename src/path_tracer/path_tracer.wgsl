@@ -25,6 +25,7 @@
 #import bevy_render::view::View
 
 const PI: f32 = 3.14159265358;
+const HALF_PI: f32 = 1.57079632679;
 const TWO_PI: f32 = 6.28318530718;
 const INV_PI: f32 = 0.31830988618;
 
@@ -57,13 +58,13 @@ fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
 
     var throughput = vec3f(1.0);
     var color = vec3f(0.0);
-    let max_depth: u32 = 3u;
-    for (var depth: u32 = 0u; depth < max_depth; depth += 1u){    
+    let depth_hard_cut: u32 = 30u;
+    for (var depth: u32 = 0u; depth < depth_hard_cut; depth += 1u){    
         trace_ray_tlas(&ray);
         if ray.record.t >= t_far  {
             // Miss
             // color += throughput * vec3<f32>(0.0, 0.7, 1.0) * 0.01;
-            color += throughput * vec3<f32>(1.0, 1.0, 1.0) * 0.01;
+            // color += throughput * vec3<f32>(1.0, 1.0, 1.0) * 0.1;
             break;
         } else {
             // Hit
@@ -82,18 +83,11 @@ fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
             // material.base_color = vec4f(1.0, 0.0, 0.0, 1.0);
             // material.metallic = 0.0;
             // material.reflectance = 0.0;
+            // material.emissive = vec4(10.0, 0.0, 0.0, 0.0);
 
             color += throughput * material.emissive.xyz;
-
-            // let clamped_perceptual_roughness = clamp(material.perceptual_roughness, 0.089, 1.0);
-            // let roughness = clamped_perceptual_roughness * clamped_perceptual_roughness;
-            // let microfacet_normal = sample_D_GGX_half(-ray.dir, world_normal, roughness, &rng_state);
-            // let pdf = pdf_D_GGX(-ray.dir, microfacet_normal.direction, microfacet_normal.theta, microfacet_normal.theta, roughness);
-            // let scatter_dir = scatter_mirror(-ray.dir, microfacet_normal.direction);
-            // throughput *= cook_torrence_evaluate(scatter_dir, -ray.dir, world_normal, material) * pdf;
-
-            let scatter_dir = sample_hemisphere_rejection(world_normal, &rng_state);
-            throughput *= cook_torrence_evaluate(scatter_dir, -ray.dir, world_normal, material) * (PI / 2.0);
+            let sample = importance_sample_ggx_d(world_normal, -ray.dir, material, &rng_state);
+            throughput *= sample.reflectance;
 
             let p = max(max(throughput.r, throughput.g), throughput.b);
             if rand_f(&rng_state) > p { 
@@ -101,18 +95,19 @@ fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
             }
             throughput *= 1.0 / p;
 
-            ray.dir = normalize(scatter_dir);
+            ray.dir = normalize(sample.wi);
             ray.origin = world_hit_position + 0.001 * world_normal;
             ray.record = RayHitRecord(t_far, 0u, 0u, 0.0, 0.0);
         }
     }
-    // color = clamp_v(color, 0.0, 1.0);
-    let old_color = textureLoad(accumulation_texture, id.xy).rgb;
+    color = clamp_v(color, 0.0, 1000.0);
+    let old_color = textureLoad(output_texture, id.xy).rgb;
     let weight = 1.0 / (f32(path_tracer_uniform.previous_sample_count) + 1.0);
-    let new_color = vec4f(old_color * (1.0 - weight) + color * weight, 1.0);
+    var new_color = vec4f(old_color * (1.0 - weight) + color * weight, 1.0);
+    // new_color = vec4f(clamp_v(new_color.xyz, 0.0, 100.0), 1.0);
 
     textureStore(accumulation_texture, id.xy, new_color);
-    textureStore(output_texture, id.xy, sqrt(new_color));
+    textureStore(output_texture, id.xy, new_color);
 }
 
 // NOTE: ONLY DIFFUSE
@@ -436,6 +431,12 @@ fn clamp_v(v: vec3f, min: f32, max: f32) -> vec3f {
     return vec3f(clamp(v.x, min, max), clamp(v.y, min, max), clamp(v.z, min, max));
 }
 
+// Assumes a and b are unit length.
+fn are_aligned(a: vec3f, b: vec3f, threshold: f32) -> bool {
+    let diff = a - b;
+    return length(diff) < threshold;
+}
+
 fn transform_position(m: mat4x4f, p: vec3f) -> vec3f {
     let h = m * vec4f(p, 1.0);
     return h.xyz / h.w;
@@ -473,66 +474,48 @@ fn rand_range_u(n: u32, state: ptr<function, u32>) -> u32 {
     return rand_u(state) % n;
 }
 
-struct ON {
-    e1: vec3f,
-    e2: vec3f,
-    e3: vec3f,
-}
-
-// Produces right-handed with `e3` aligned to `normal`
-fn orthonormal_from_normal(normal: vec3f) -> ON {
-    let e3 = normal;
-    var e2: vec3f;
-    if dot(e3, vec3f(1.0, 0.0, 0.0)) != 0.0 {
-        e2 = normalize(cross(e3, vec3f(1.0, 0.0, 0.0)));
-    } else {
-        e2 = normalize(cross(e3, vec3f(0.0, 1.0, 0.0)));
-    }
-    let e1 = normalize(cross(e3, e2));
-    return ON(e1, e2, e3);
-}
-
-// Assumes right-handed with e3 up
-fn spherical_in_orthonormal_to_world(theta: f32, phi: f32, on: ON) -> vec3f {
-    return (on.e1 * sin(theta) * cos(phi)) + (on.e2 * sin(theta) * sin(phi)) + (on.e3 * cos(theta));
-}
 
 // from https://agraphicsguynotes.com/posts/sample_microfacet_brdf/
-// `roughness` is NOT the perceptual roughness in [0.0, 1.0]
 fn pdf_D_GGX(view: vec3f, half: vec3f, theta: f32, phi: f32, roughness: f32) -> f32 {
+    let a = roughness * roughness;
     let cos_theta = cos(theta);
-    let denominator = roughness * roughness * cos_theta * sin(theta);
-    let d = (roughness * roughness - 1.0) * cos_theta + 1.0;
-    let numerator = 4.0 * dot(view, half) * PI * d * d;
+    let denominator = 2.0 * a * cos_theta * sin(theta);
+    let d = (a - 1.0) * cos_theta + 1.0;
+    let numerator = 4.0 * dot(view, half) * d * d;
     return denominator / numerator;
 }
 
 struct ScatterDirection {
     // Spherical coordinates in the hit-space half-sphere. 
     // See `theta` and `phi` in `sample_D_GGX()`
-    theta: f32,
-    phi: f32,
-    // In world space
-    direction: vec3f,
+    // theta: f32,
+    // phi: f32,
+    microfacet_normal: vec3f,
+    scatter_dir: vec3f,
+    pdf: f32,
 }
 
 // roughness is NOT the perceptual_roughness in [0.0, 1.0]
-fn sample_D_GGX_half(view: vec3f, normal: vec3f, roughness: f32, state: ptr<function, u32>) -> ScatterDirection {
-    // From https://agraphicsguynotes.com/posts/sample_microfacet_brdf/
-    let e1 = rand_f(state);
-    let e2 = rand_f(state);
-    let theta = atan(sqrt(e1/(1.0-e1)));
-    let phi = e2 * TWO_PI;
+// fn sample_D_GGX(view: vec3f, normal: vec3f, roughness: f32, state: ptr<function, u32>) -> ScatterDirection {
+//     // From https://agraphicsguynotes.com/posts/sample_microfacet_brdf/
+//     let r1 = rand_f(state);
+//     let r2 = rand_f(state);
+//     let roughness_sq = roughness * roughness;
+//     let theta = acos(sqrt((1.0 - r1) / ((roughness_sq - 1.0) * r1 + 1.0)));
+//     let phi = r2 * TWO_PI;
+//     // let theta = atan(sqrt(roughness * e1 / (1.0 - e1)));
     
-    // Orthonormal basis vectors with e3/z aligned to `normal`
-    let on = orthonormal_from_normal(normal);
+//     // Orthonormal basis vectors with e3/z aligned to `normal`
+//     let on = orthonormal_from_normal(normal);
 
-    // halfway vector / microfacet normal
-    let half = spherical_in_orthonormal_to_world(theta, phi, on);
-    return ScatterDirection(theta, phi, half);
-}
+//     // halfway vector / microfacet normal
+//     let microfacet_normal = normalize(spherical_in_orthonormal_to_world(theta, phi, on));
+//     let scatter_dir = normalize(scatter_mirror(view, microfacet_normal));
+//     let pdf = pdf_D_GGX(view, microfacet_normal, theta, phi, roughness);
+//     return ScatterDirection(microfacet_normal, scatter_dir, pdf);
+// }
 
-fn sample_cosine_hemisphere_solari(normal: vec3<f32>, state: ptr<function, u32>) -> vec3<f32> {
+fn sample_cosine_hemisphere(normal: vec3<f32>, state: ptr<function, u32>) -> vec3<f32> {
     let cos_theta = 2.0 * rand_f(state) - 1.0;
     let phi = 2.0 * PI * rand_f(state);
     let sin_theta = sqrt(max(1.0 - cos_theta * cos_theta, 0.0));
@@ -540,12 +523,6 @@ fn sample_cosine_hemisphere_solari(normal: vec3<f32>, state: ptr<function, u32>)
     let cos_phi = cos(phi);
     let unit_sphere_direction = normalize(vec3(sin_theta * cos_phi, cos_theta, sin_theta * sin_phi));
     return normal + unit_sphere_direction;
-}
-
-
-// Assumes `normal` is of unit length
-fn scatter_mirror(in: vec3f, normal: vec3f) -> vec3f {
-    return in - 2.0 * dot(in, normal) * normal;
 }
 
 fn sample_hemisphere_rejection(normal: vec3f, state: ptr<function, u32>) -> vec3f {
@@ -563,53 +540,204 @@ fn sample_hemisphere_rejection(normal: vec3f, state: ptr<function, u32>) -> vec3
     return normal;
 }
 
+
+// l: light direction, v: view direction, n: geometric normal (not microfacet normal, which is `H`)
+// fn cook_torrence_evaluate(L: vec3f, V: vec3f, N: vec3f, material: Material) -> vec3f {
+//     let H = normalize(L + V);
+
+//     let NoV = clamp(dot(N, V), 0.001, 1.0);
+//     let NoL = clamp(dot(N, L), 0.001, 1.0);
+//     let NoH = clamp(dot(N, H), 0.001, 1.0);
+//     let VoH = clamp(dot(V, H), 0.001, 1.0);
+
+//     var f0 = vec3f(0.16 * material.reflectance * material.reflectance);
+//     f0 = f0 * (1.0 - material.metallic) + material.base_color.rgb * material.metallic;
+
+//     let clamped_perceptual_roughness = clamp(material.perceptual_roughness, 0.089, 1.0);
+//     let roughness = clamped_perceptual_roughness * clamped_perceptual_roughness;
+
+//     let F = fresnel_schlick(VoH, f0);
+//     let D = D_GGX(NoH, roughness);
+//     let G = G_smith(NoV, NoL, roughness);
+
+//     let specular = (F * D * G) / (4.0 * NoV * NoL);
+
+//     var rhoD = material.base_color.rgb;
+//     rhoD *= vec3f(1.0) - F;
+//     rhoD *= (1.0 - material.metallic);
+
+//     let diffuse = rhoD * INV_PI;
+
+//     return diffuse + specular;
+// }
+
+// Orthonormal basis vectors
+struct ON {
+    e1: vec3f,
+    e2: vec3f,
+    e3: vec3f,
+}
+
+// Produces right-handed with `e2` aligned to `normal`
+fn orthonormal_from_normal(normal: vec3f) -> ON {
+    let e2 = normal;
+    var e3: vec3f;
+    if !are_aligned(e2, vec3f(1.0, 0.0, 0.0), 0.001) {
+        e3 = normalize(cross(e2, vec3f(1.0, 0.0, 0.0)));
+    } else {
+        e3 = normalize(cross(e2, vec3f(0.0, 1.0, 0.0)));
+    }
+    let e1 = normalize(cross(e2, e3));
+    return ON(e1, e2, e3);
+}
+
+// Assumes right-handed with `e2` up
+fn spherical_to_cartesian_in_on(theta: f32, phi: f32, on: ON) -> vec3f {
+    let sin_theta = sin(theta);
+    return 
+        (on.e1 * sin_theta * sin(phi))
+        + (on.e2 * cos(theta)
+        + (on.e3 * sin_theta * cos(phi))
+    );
+}
+
+// right-handed with y-axis up
+fn spherical_to_cartesian(theta: f32, phi: f32) -> vec3f {
+    let sin_theta = sin(theta);
+    return vec3f(
+        sin_theta * sin(phi),
+        cos(theta),
+        sin_theta * cos(phi),
+    );
+}
+
+// Reflects `a` about `b`. Assumes `b` is normalized.
+fn reflect(a: vec3f, b: vec3f) -> vec3f {
+    return 2.0 * dot(a, b) * b - a;
+}
+
+
+// https://schuttejoe.github.io/post/ggximportancesamplingpart1/
+// fn importance_sample_ggx_d_OLD(n: vec3f, wo: vec3f, perceptual_roughness: f32, rng: ptr<function, u32>) -> ImportanceSamplingResult {
+//     let a2 = perceptual_roughness * perceptual_roughness;
+
+//     let e0 = rand_f(rng);
+//     let e1 = rand_f(rng);
+
+//     let theta = acos(sqrt(1.0 - e0) / ((a2 - 1.0) * e0 + 1.0));
+//     let phi = e1 * TWO_PI;
+
+//     // Create tangent space basis vectors.
+//     let on = orthonormal_from_normal(n);
+//     // Microsurface normal or half-vector in world space.
+//     let wm = spherical_to_cartesian_in_on(theta, phi, on);
+//     // Incident direction in world space.
+//     let wi = reflect(wo, wm);
+
+//     let IoM = dot(wi, wm); // Incident direction dot microfacet normal
+//     let OoM = dot(wo, wm); // Outgoing direction dot microfacet normal
+//     let IoN = dot(wi, n); // Incident direction dot geometric normal
+//     let OoN = dot(wo, n); // Outgoing direction dot geometric normal
+//     let MoN = dot(wm, n); // Microfacet normal dot geometric normal
+
+//     // `reflectance` is what the light coming from `wi` should be multiplied by.
+//     var reflectance: f32;
+//     // Ensure the sampled incident direction is in the upper hemisphere.
+//     if IoN > 0.0 && IoM > 0.0 {
+//         var f0 = vec3f(0.16 * material.reflectance * material.reflectance);
+//         f0 = f0 * (1.0 - material.metallic) + material.base_color.rgb * material.metallic;
+
+//         let F = fresnel_schlick(IoM, f0);
+//         let G = G_smith(OoN, IoN, perceptual_roughness); 
+//         let weight = abs(OoM) / (OoN * MoN);
+
+//         reflectance = F * G * weight;
+//     } else {
+//         reflectance = 0.0;
+//     }
+
+//     return ImportanceSamplingResult(wi, reflectance);
+// }
+
 fn fresnel_schlick(cos_theta: f32, f0: vec3f) -> vec3f {
     return f0 + (1.0 - f0) * pow(1.0 - cos_theta, 5.0);
 }
 
-fn D_GGX(NoH: f32, roughness: f32) -> f32 {
-    let roughness_sq = roughness * roughness;
-    let NoH_sq = NoH * NoH;
-    let b = (NoH_sq * (roughness_sq - 1.0) + 1.0);
-    return roughness_sq * INV_PI / (b * b);
+fn D_GGX(NdotM: f32, roughness: f32) -> f32 {
+    let a = roughness * roughness;
+    let a2 = a * a;
+    let NdotM2= NdotM * NdotM;
+    let b = (NdotM2* (a2 - 1.0) + 1.0);
+    return a2 * INV_PI / (b * b);
 }
 
-fn G1_GGX_schlick(NoV: f32, roughness: f32) -> f32 {
-    let k = roughness / 2.0;
-    return NoV / (NoV * (1.0 - k) + k);
+fn G1_GGX_schlick(NdotO: f32, roughness: f32) -> f32 {
+    let a = roughness * roughness;
+    let k = a / 2.0;
+    return NdotO / (NdotO * (1.0 - k) + k);
 }
 
-fn G_smith(NoV: f32, NoL: f32, roughness: f32) -> f32 {
-    return G1_GGX_schlick(NoL, roughness) * G1_GGX_schlick(NoV, roughness);
+fn G_smith(NdotO: f32, NdotI: f32, roughness: f32) -> f32 {
+    return G1_GGX_schlick(NdotI, roughness) * G1_GGX_schlick(NdotO, roughness);
 }
 
-// l: light direction, v: view direction, n: geometric normal (not microfacet normal, which is `H`)
-fn cook_torrence_evaluate(L: vec3f, V: vec3f, N: vec3f, material: Material) -> vec3f {
-    let H = normalize(L + V);
+struct ImportanceSamplingResult {
+    // Sampled direction in world space.
+    wi: vec3f,
+    // This is what the light coming from `wi` should be multiplied by.
+    reflectance: vec3f,
+}
 
-    let NoV = clamp(dot(N, V), 0.001, 1.0);
-    let NoL = clamp(dot(N, L), 0.001, 1.0);
-    let NoH = clamp(dot(N, H), 0.001, 1.0);
-    let VoH = clamp(dot(V, H), 0.001, 1.0);
-
+fn importance_sample_ggx_d(n: vec3f, wo: vec3f, material: Material, rng: ptr<function, u32>) -> ImportanceSamplingResult {
     var f0 = vec3f(0.16 * material.reflectance * material.reflectance);
     f0 = f0 * (1.0 - material.metallic) + material.base_color.rgb * material.metallic;
 
-    let clamped_perceptual_roughness = clamp(material.perceptual_roughness, 0.089, 1.0);
-    let roughness = clamped_perceptual_roughness * clamped_perceptual_roughness;
+    let NdotO = dot(n, wo);
+    let F0 = fresnel_schlick(NdotO, f0);
+    let F0_max = max(max(F0.r, F0.g), F0.b);
 
-    let F = fresnel_schlick(VoH, f0);
-    let D = D_GGX(NoH, roughness);
-    let G = G_smith(NoV, NoL, roughness);
+    let e0 = rand_f(rng);
+    let e1 = rand_f(rng);
+    let e2 = rand_f(rng);
 
-    let specular = (F * D * G) / (4.0 * NoV * NoL);
+    var brdf: vec3f;
+    var pdf_s: f32;
+    var pdf_d: f32;
+    var wi: vec3f;
+    if e0 <= F0_max {
+        // Sample specular
+        let a = material.perceptual_roughness * material.perceptual_roughness;
+        let a2 = a * a;
+        let theta = acos(sqrt((1.0 - e1) / (e1 * (a2 - 1.0) + 1.0)));
+        let phi = e2 * TWO_PI;
 
-    var rhoD = material.base_color.rgb;
-    rhoD *= vec3f(1.0) - F;
-    rhoD *= (1.0 - material.metallic);
+        // Create tangent space basis vectors.
+        let on = orthonormal_from_normal(n);
+        // Microsurface normal or half-vector in world space.
+        let wm = spherical_to_cartesian_in_on(theta, phi, on);
+        // Incident direction in world space.
+        wi = reflect(wo, wm);
 
-    let diffuse = rhoD * INV_PI;
+        let NdotM = dot(n, wm);
+        let NdotI = dot(n, wi);
+        let OdotM = dot(wo, wm);
 
-    return diffuse + specular;
+        let F = fresnel_schlick(OdotM, f0);
+        let D = D_GGX(NdotM, material.perceptual_roughness);
+        let G = G_smith(NdotO, NdotI, material.perceptual_roughness);
+
+        brdf = (F * D * G) / (4.0 * NdotO * NdotI);
+        pdf_s = D * NdotM / (4.0 * OdotM);
+    } else {
+        // Sample diffuse
+        wi = sample_cosine_hemisphere(n, rng);
+        let NdotI = dot(n, wi);
+        brdf = material.base_color.rgb * PI * NdotI;
+        pdf_d = PI * NdotI;
+    }
+
+    let pdf = ((1.0 - F0_max) * pdf_d) + (F0_max * pdf_s);
+    let reflectance = brdf / pdf;
+
+    return ImportanceSamplingResult(wi, reflectance);
 }
-

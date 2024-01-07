@@ -78,7 +78,7 @@ fn setup(
     // });
 
     // note that we have to include the `Scene0` label
-    let monkey = asset_server.load("monkey_blue.glb#Scene0");
+    let monkey = asset_server.load("monkey_smooth.glb#Scene0");
 
     let step_size = 3.0;
     let resolution = 0;
@@ -94,114 +94,34 @@ fn setup(
         }
     }
 
-    commands.spawn(PbrBundle {
-        mesh: mesh_assets.add(
-            Mesh::try_from(shape::Icosphere {
-                radius: 0.9,
-                subdivisions: 5,
-            })
-            .unwrap(),
-        ),
-        material: mat_assets.add(StandardMaterial {
-            base_color: Color::rgba(1.0, 0.0, 0.0, 0.0),
-            emissive: Color::WHITE * 100.0,
-            perceptual_roughness: 0.0,
-            // reflectance: 1.0,
-            // reflectance: 0.5,
-            reflectance: 0.0,
-            metallic: 0.0,
-            ..default()
-        }),
-        transform: Transform::from_translation(Vec3::new(10.0, 10.0, 10.0)),
-        ..default()
-    });
-
-    // Spheres
-    commands.spawn(PbrBundle {
-        mesh: mesh_assets.add(
-            Mesh::try_from(shape::Icosphere {
-                radius: 0.9,
-                subdivisions: 5,
-            })
-            .unwrap(),
-        ),
-        material: mat_assets.add(StandardMaterial {
-            base_color: Color::rgba(1.0, 0.0, 0.0, 0.0),
-            emissive: Color::BLACK,
-            perceptual_roughness: 0.0,
-            // reflectance: 1.0,
-            // reflectance: 0.5,
-            reflectance: 0.0,
-            metallic: 0.0,
-            ..default()
-        }),
-        transform: Transform::from_translation(Vec3::new(0.0, 0.0, -3.0)),
-        ..default()
+    let cornell = asset_server.load("cornell.glb#Scene0");
+    commands.spawn(SceneBundle {
+        scene: cornell.clone(),
+        transform: Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, 0.0, -PI / 2.0, 0.0)),
+        ..Default::default()
     });
 
     commands.spawn(PbrBundle {
         mesh: mesh_assets.add(
-            Mesh::try_from(shape::Icosphere {
-                radius: 0.9,
-                subdivisions: 5,
-            })
-            .unwrap(),
+            // Mesh::try_from(shape::Icosphere {
+            //     radius: 0.2,
+            //     subdivisions: 5,
+            // })
+            Mesh::try_from(shape::Torus::default()).unwrap(),
         ),
         material: mat_assets.add(StandardMaterial {
             base_color: Color::rgba(1.0, 0.0, 0.0, 0.0),
             emissive: Color::BLACK,
-            perceptual_roughness: 0.33,
+            perceptual_roughness: 0.05,
             // reflectance: 1.0,
             // reflectance: 0.5,
-            reflectance: 0.0,
+            reflectance: 1.0,
             metallic: 0.0,
             ..default()
         }),
-        transform: Transform::from_translation(Vec3::new(2.0, 0.0, -3.0)),
-        ..default()
-    });
-
-    commands.spawn(PbrBundle {
-        mesh: mesh_assets.add(
-            Mesh::try_from(shape::Icosphere {
-                radius: 0.9,
-                subdivisions: 5,
-            })
-            .unwrap(),
-        ),
-        material: mat_assets.add(StandardMaterial {
-            base_color: Color::rgba(1.0, 0.0, 0.0, 0.0),
-            emissive: Color::BLACK,
-            perceptual_roughness: 0.66,
-            // reflectance: 1.0,
-            // reflectance: 0.5,
-            reflectance: 0.0,
-            metallic: 0.0,
-            ..default()
-        }),
-        transform: Transform::from_translation(Vec3::new(4.0, 0.0, -3.0)),
-        ..default()
-    });
-
-    commands.spawn(PbrBundle {
-        mesh: mesh_assets.add(
-            Mesh::try_from(shape::Icosphere {
-                radius: 0.9,
-                subdivisions: 5,
-            })
-            .unwrap(),
-        ),
-        material: mat_assets.add(StandardMaterial {
-            base_color: Color::rgba(1.0, 0.0, 0.0, 0.0),
-            emissive: Color::BLACK,
-            perceptual_roughness: 1.0,
-            // reflectance: 1.0,
-            // reflectance: 0.5,
-            // reflectance: 0.0,
-            metallic: 0.0,
-            ..default()
-        }),
-        transform: Transform::from_translation(Vec3::new(6.0, 0.0, -3.0)),
+        transform: Transform::from_translation(Vec3::new(0.3, 0.3, 0.0))
+            .with_scale(Vec3::new(0.2, 0.2, 0.2))
+            .with_rotation(Quat::from_euler(EulerRot::XYZ, 0.7, -0.7, 0.0)),
         ..default()
     });
 
@@ -215,89 +135,23 @@ fn setup(
     //     ),
     //     material: mat_assets.add(StandardMaterial {
     //         base_color: Color::rgba(1.0, 0.0, 0.0, 0.0),
-    //         emissive: Color::WHITE * 7.0,
-    //         perceptual_roughness: 1.0,
-    //         reflectance: 0.0,
+    //         emissive: Color::BLACK,
+    //         perceptual_roughness: 0.33,
+    //         // reflectance: 1.0,
     //         // reflectance: 0.5,
-    //         metallic: 0.0,
-    //         ..default()
-    //     }),
-    //     transform: Transform::from_translation(Vec3::new(6.0, 0.0, -3.0)),
-    //     ..default()
-    // });
-
-    // PLANES
-    commands.spawn(PbrBundle {
-        mesh: mesh_assets.add(Mesh::from(shape::Plane {
-            size: 200.0,
-            subdivisions: 0,
-        })),
-        material: mat_assets.add(StandardMaterial {
-            base_color: Color::rgba(1.0, 1.0, 1.0, 1.0),
-            emissive: Color::BLACK,
-            perceptual_roughness: 0.0,
-            reflectance: 1.0,
-            metallic: 0.0,
-            ..default()
-        }),
-        transform: Transform::from_translation(Vec3::new(0.0, -0.9, 0.0)),
-        ..default()
-    });
-
-    // commands.spawn(PbrBundle {
-    //     mesh: mesh_assets.add(Mesh::from(shape::Plane {
-    //         size: 8.0,
-    //         subdivisions: 0,
-    //     })),
-    //     material: mat_assets.add(StandardMaterial {
-    //         base_color: Color::rgba(1.0, 1.0, 1.0, 1.0),
-    //         emissive: Color::WHITE * 10.0,
-    //         perceptual_roughness: 0.0,
     //         reflectance: 0.0,
     //         metallic: 0.0,
     //         ..default()
     //     }),
-    //     transform: Transform::from_translation(Vec3::new(3.0, 2.0, -3.0))
-    //         .with_scale(Vec3::new(1.0, 1.0, 0.3)),
+    //     transform: Transform::from_translation(Vec3::new(2.0, 0.0, -3.0)),
     //     ..default()
     // });
-
-    // commands.spawn(PbrBundle {
-    //     mesh: mesh_assets.add(Mesh::from(shape::Cube { size: 1.0 })),
-    //     transform: Transform::from_translation(Vec3::new(-2.0, 0.0, -3.0)),
-    //     ..default()
-    // });
-
-    // commands.spawn(PbrBundle {
-    //     mesh: mesh_assets.add(Mesh::from(shape::Torus {
-    //         subdivisions_segments: 32,
-    //         subdivisions_sides: 24,
-    //         ..default()
-    //     })),
-    //     material: mat_assets.add(StandardMaterial {
-    //         base_color: Color::rgba(1.0, 0.6, 0.0, 1.0),
-    //         ..default()
-    //     }),
-    //     transform: Transform::from_xyz(0.0, 0.0, -1.5),
-    //     ..default()
-    // });
-
-    // Light
-    commands.spawn(PointLightBundle {
-        point_light: PointLight {
-            intensity: 6000.0,
-            shadows_enabled: true,
-            ..default()
-        },
-        transform: Transform::from_xyz(4.0, 8.0, 4.0),
-        ..default()
-    });
 
     if RENDER_WITH_PULSE {
         commands.spawn((
             Camera3dBundle {
                 camera_render_graph: CameraRenderGraph::new(PULSE_GRAPH),
-                transform: Transform::from_xyz(0.0, 0.0, 10.0),
+                transform: Transform::from_xyz(0.0, 0.0, 3.0),
                 camera: Camera {
                     hdr: true,
                     ..default()
