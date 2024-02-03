@@ -2,6 +2,26 @@
 
 // NOTE: naga doesn't allow imported types/names to end with a number. 
 
+struct SceneUniform {
+    instance_count: u32,
+    light_count: u32,
+}
+
+struct Ray {
+    origin: vec3f,
+    dir: vec3f,
+    record: RayHitRecord,
+}
+
+struct RayHitRecord {
+    t: f32,
+    instance_index: u32,
+    triangle_index: u32,
+    // Barycentric coordinates of hit position
+    u: f32,
+    v: f32,
+}
+
 struct Primitive {
     p_first: vec3<f32>,
     p_second: vec3<f32>,
@@ -35,6 +55,7 @@ struct MeshInstance {
     object_world: mat4x4f,
     world_object: mat4x4f,
     triangle_offset: u32,
+    triangle_count: u32,
     index_offset: u32,
     node_offset: u32,
     material_index: u32,
@@ -48,21 +69,8 @@ struct Material {
     metallic: f32,
 }
 
-struct SceneUniform {
-    instance_count: u32,
-}
-
-struct Ray {
-    origin: vec3f,
-    dir: vec3f,
-    record: RayHitRecord,
-}
-
-struct RayHitRecord {
-    t: f32,
-    instance_index: u32,
-    triangle_index: u32,
-    // Barycentric coordinates of hit position
-    u: f32,
-    v: f32,
+struct LightDataIndex {
+    cdf_offset: u32,
+    // triangle_count: u32, // Also number of values in cdf
+    mesh_instance_index: u32,
 }

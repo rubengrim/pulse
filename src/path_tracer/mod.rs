@@ -3,13 +3,16 @@ use std::sync::{
     Arc,
 };
 
-use crate::{PulsePathTracerAccumulationRenderTarget, PulseRenderTarget, PULSE_GRAPH};
+use crate::{
+    upscaling::PulseUpscalingNode, PulsePathTracerAccumulationRenderTarget, PulseRenderTarget,
+};
 use bevy::{
     asset::load_internal_asset,
     prelude::*,
     render::{
         camera::{CameraRenderGraph, ExtractedCamera},
         extract_component::{ExtractComponent, ExtractComponentPlugin},
+        render_graph::{RenderGraphApp, ViewNodeRunner},
         render_resource::*,
         renderer::RenderDevice,
         texture::TextureCache,
@@ -23,6 +26,8 @@ pub use node::*;
 
 pub mod pipeline;
 pub use pipeline::*;
+
+pub const PULSE_PATH_TRACER_GRAPH: &str = "pulse_path_tracer_graph";
 
 pub const PULSE_PATH_TRACER_SHADER_HANDLE: Handle<Shader> =
     Handle::weak_from_u128(187737725855836603431472235363477954946);
@@ -48,14 +53,24 @@ impl Plugin for PulsePathTracerPlugin {
 
     fn finish(&self, app: &mut App) {
         let render_app = app.sub_app_mut(RenderApp);
+
+        render_app
+            .add_render_sub_graph(PULSE_PATH_TRACER_GRAPH)
+            .add_render_graph_node::<ViewNodeRunner<PulsePathTracerNode>>(
+                PULSE_PATH_TRACER_GRAPH,
+                PulsePathTracerNode::NAME,
+            )
+            .add_render_graph_node::<ViewNodeRunner<PulseUpscalingNode>>(
+                PULSE_PATH_TRACER_GRAPH,
+                PulseUpscalingNode::NAME,
+            );
+
         render_app
             .init_resource::<PulsePathTracerPipeline>()
             .init_resource::<SpecializedComputePipelines<PulsePathTracerPipeline>>()
             .add_systems(
                 Render,
-                (prepare_pipelines, prepare_render_targets)
-                    .in_set(RenderSet::Prepare)
-                    .before(crate::upscaling::prepare_upscaling_pipelines),
+                (prepare_pipelines, prepare_render_targets).in_set(RenderSet::Prepare),
             );
     }
 }
@@ -98,7 +113,7 @@ impl Default for PulsePathTracerCameraBundle {
                 hdr: true,
                 ..default()
             },
-            camera_render_graph: CameraRenderGraph::new(PULSE_GRAPH),
+            camera_render_graph: CameraRenderGraph::new(PULSE_PATH_TRACER_GRAPH),
             projection: Default::default(),
             transform: Default::default(),
             global_transform: Default::default(),

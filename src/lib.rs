@@ -5,24 +5,23 @@ use bevy::{
         render_resource::*,
         renderer::{RenderDevice, RenderQueue},
         texture::{CachedTexture, TextureCache},
-        view::ViewTarget,
         RenderApp,
     },
 };
 
 pub mod diagnostics;
 pub mod path_tracer;
+pub mod pulse;
 pub mod scene;
 pub mod upscaling;
 pub mod utilities;
 
 use diagnostics::*;
 use path_tracer::*;
+use pulse::*;
 use scene::*;
 use upscaling::*;
 use utilities::*;
-
-pub const PULSE_GRAPH: &str = "pulse_graph";
 
 pub struct PulsePlugin;
 
@@ -51,16 +50,6 @@ impl Plugin for PulsePlugin {
         //     }
         // }
 
-        render_app
-            .add_render_sub_graph(PULSE_GRAPH)
-            .add_render_graph_node::<ViewNodeRunner<PulsePathTracerNode>>(
-                PULSE_GRAPH,
-                PulsePathTracerNode::NAME,
-            )
-            .add_render_graph_node::<ViewNodeRunner<PulseUpscalingNode>>(
-                PULSE_GRAPH,
-                PulseUpscalingNode::NAME,
-            );
         // .add_render_graph_node::<ViewNodeRunner<UpscalingNode>>(PULSE_GRAPH, "upscaling");
 
         // render_graph

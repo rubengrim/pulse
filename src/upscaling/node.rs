@@ -49,15 +49,11 @@ impl ViewNode for PulseUpscalingNode {
         );
 
         let mut render_pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
-            label: Some("pulse_path_tracer_render_pass"),
-            color_attachments: &[Some(RenderPassColorAttachment {
-                view: view_target.out_texture(),
-                resolve_target: None,
-                ops: Operations {
-                    load: LoadOp::Clear(Color::PINK.into()),
-                    store: true,
-                },
-            })],
+            label: Some("pulse_upscaling_render_pass"),
+            color_attachments: &[Some(view_target.get_color_attachment(Operations {
+                load: LoadOp::Load,
+                store: true,
+            }))],
             depth_stencil_attachment: None,
         });
 

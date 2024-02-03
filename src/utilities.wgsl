@@ -1,3 +1,5 @@
+#define_import_path pulse::utilities
+
 #import pulse::scene::{
     types::{
         Primitive,
@@ -23,206 +25,95 @@
         blue_noise_texture,
     }
 }
-#import bevy_render::view::View
 
 const PI: f32 = 3.14159265358;
 const HALF_PI: f32 = 1.57079632679;
 const TWO_PI: f32 = 6.28318530718;
 const INV_PI: f32 = 0.31830988618;
 
-struct PathTracerUniform {
-    previous_sample_count: u32,
+//------------
+// BEGIN: MISC
+
+fn clamp_v(v: vec3f, min: f32, max: f32) -> vec3f {
+    return vec3f(clamp(v.x, min, max), clamp(v.y, min, max), clamp(v.z, min, max));
 }
 
-@group(1) @binding(0) var<uniform> view: View;
-@group(1) @binding(1) var<uniform> path_tracer_uniform: PathTracerUniform;
-@group(1) @binding(2) var output_texture: texture_storage_2d<rgba32float, read_write>;
-@group(1) @binding(3) var accumulation_texture: texture_storage_2d<rgba32float, read_write>;
-
-@compute @workgroup_size(16, 16, 1)
-fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
-    let pixel_index = id.x + id.y * u32(view.viewport.z);
-
-    var rng_state = pixel_index + path_tracer_uniform.previous_sample_count * 5817321u;
-    // The blue noise texture is 64x64x64 textures arranged in an atlas. Randomly choose one 64x64 texture each frame.
-    // let bn_texture_offset_x = u32(rand_f(&wn_state) * 8.0) * 64u;
-    // let bn_texture_offset_y = u32(rand_f(&wn_state) * 8.0) * 64u;
-    // let bn_texture_offset = vec2u(rand_f_pair(&rng_state) * 8.0) * 64u;
-    let bn_texture_offset = vec2u(0u);
-
-    let pixel_jitter = rand_f_pair(&rng_state);
-    var pixel_uv = (vec2<f32>(id.xy) + pixel_jitter) / view.viewport.zw;
-
-    // Clip position goes from -1 to 1.
-    let pixel_clip_pos = (pixel_uv * 2.0) - 1.0;
-    let ray_target = view.inverse_view_proj * vec4<f32>(pixel_clip_pos.x, -pixel_clip_pos.y, 1.0, 1.0);
-    var ray = Ray(); // Should always be kept in world space.
-    ray.origin = view.world_position;
-    ray.dir = normalize((ray_target.xyz / ray_target.w) - ray.origin);
-    let t_far = 1e30;
-    ray.record = RayHitRecord(t_far, 0u, 0u, 0.0, 0.0);
-    
-    var throughput = vec3f(1.0);
-    var color = vec3f(0.0);
-    color = vec3f(next_bn_sample(&rng_state, bn_texture_offset, id.xy));
-    
-    let depth_hard_cut: u32 = 0u;
-    for (var depth: u32 = 0u; depth < depth_hard_cut; depth += 1u){    
-        trace_ray_tlas(&ray);
-        if ray.record.t >= t_far  {
-            // Miss
-            // color += throughput * vec3<f32>(0.0, 0.7, 1.0) * 0.01;
-            // color += throughput * vec3<f32>(1.0, 1.0, 1.0) * 0.1;
-            break;
-        } else {
-            // Hit
-            let instance = instances[ray.record.instance_index];
-            let t_idx = triangle_indices[instance.index_offset + ray.record.triangle_index];
-            let t = triangle_data[instance.triangle_offset + t_idx];
-            let w = 1.0 - (ray.record.u + ray.record.v);
-            let normal = w * t.n_first + ray.record.u * t.n_second + ray.record.v * t.n_third;
-            let world_normal = normalize(transform_direction(instance.object_world, normal));
-            let world_hit_position = ray.origin + ray.record.t * ray.dir;
-
-            let material_index = instance.material_index;
-            var material = materials[material_index];
-
-            // material.perceptual_roughness = 0.7;
-            // material.base_color = vec4f(1.0, 0.0, 0.0, 1.0);
-            // material.metallic = 0.0;
-            // material.reflectance = 0.5;
-            // material.emissive = vec4(10.0, 0.0, 0.0, 0.0);
-
-            color += throughput * material.emissive.xyz * 1.5;
-            let sample = importance_sample_ggx_d(world_normal, -ray.dir, material, &rng_state, bn_texture_offset, id.xy);
-            throughput *= sample.reflectance;
-
-            let p = max(max(throughput.r, throughput.g), throughput.b);
-            if rand_f(&rng_state) > p { 
-                break; 
-            }
-            throughput *= 1.0 / p;
-
-            ray.dir = normalize(sample.wi);
-            ray.origin = world_hit_position + 0.001 * world_normal;
-            ray.record = RayHitRecord(t_far, 0u, 0u, 0.0, 0.0);
-        }
-    }
-    // color = clamp_v(color, 0.0, 100000.0);
-    // color = sqrt(color);
-    let old_color = textureLoad(output_texture, id.xy).rgb;
-    let weight = 1.0 / (f32(path_tracer_uniform.previous_sample_count) + 1.0);
-    var new_color = vec4f(old_color * (1.0 - weight) + color * weight, 1.0);
-
-    textureStore(accumulation_texture, id.xy, new_color);
-    // textureStore(output_texture, id.xy, new_color);
-    textureStore(output_texture, id.xy, vec4f(color, 1.0));
+// Assumes a and b are unit length.
+fn are_aligned(a: vec3f, b: vec3f, threshold: f32) -> bool {
+    let diff = a - b;
+    return length(diff) < threshold;
 }
 
-// NOTE: ONLY DIFFUSE
-// @compute @workgroup_size(16, 16, 1)
-// fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
-//     let pixel_index = id.x + id.y * u32(view.viewport.z);
-//     var rng_state = pixel_index + path_tracer_uniform.previous_sample_count * 5817321u;
+// END: MISC
+//----------
 
-//     let pixel_jitter = rand_f_pair(&rng_state);
-//     var pixel_uv = (vec2<f32>(id.xy) + pixel_jitter) / view.viewport.zw;
-//     // Clip position goes from -1 to 1.
-//     let pixel_clip_pos = (pixel_uv * 2.0) - 1.0;
-//     let ray_target = view.inverse_view_proj * vec4<f32>(pixel_clip_pos.x, -pixel_clip_pos.y, 1.0, 1.0);
-//     var ray = Ray(); // Should always be kept in world space.
-//     ray.origin = view.world_position;
-//     ray.dir = normalize((ray_target.xyz / ray_target.w) - ray.origin);
-//     let t_far = 1e30;
-//     ray.record = RayHitRecord(t_far, 0u, 0u, 0.0, 0.0);
+//--------------------------------
+// BEGIN: RANDOM NUMBER GENERATION
 
-//     var throughput = vec3f(1.0);
-//     var color = vec3f(0.0);
-//     let max_depth: u32 = 3u;
-//     for (var depth: u32 = 0u; depth < max_depth; depth += 1u){    
-//         trace_ray_tlas(&ray);
-//         if ray.record.t >= t_far  {
-//             // Miss
-//             color += throughput * vec3<f32>(0.0, 0.3, 0.3);
-//             break;
-//         } else {
-//             // Hit
-//             let instance = instances[ray.record.instance_index];
-//             let t_idx = triangle_indices[instance.index_offset + ray.record.triangle_index];
-//             let t = triangle_data[instance.triangle_offset + t_idx];
-//             let w = 1.0 - (ray.record.u + ray.record.v);
-//             let normal = w * t.n_first + ray.record.u * t.n_second + ray.record.v * t.n_third;
-//             let world_normal = normalize(transform_direction(instance.object_world, normal));
-//             let world_hit_position = ray.origin + ray.record.t * ray.dir;
-
-//             let material_index = instance.material_index;
-//             let material = materials[material_index];
-
-//             color += throughput * material.emissive.xyz * 10.0;
-//             throughput *= material.base_color.xyz;
-
-//             let p = max(max(throughput.r, throughput.g), throughput.b);
-//             if rand_f(&rng_state) > p { 
-//                 break; 
-//             }
-//             throughput *= 1.0 / p;
-
-//             let scatter_dir = sample_hemisphere_rejection(world_normal, &rng_state);
-//             // let scatter_dir = sample_cosine_hemisphere_solari(world_normal, &rng_state);
-//             // let scatter_dir = scatter_mirror(ray.dir, world_normal);
-//             ray.dir = normalize(scatter_dir);
-//             ray.origin = world_hit_position + 0.001 * world_normal;
-//             ray.record = RayHitRecord(t_far, 0u, 0u, 0.0, 0.0);
-//         }
-//     }  
-//     let old_color = textureLoad(accumulation_texture, id.xy).rgb;
-//     let weight = 1.0 / (f32(path_tracer_uniform.previous_sample_count) + 1.0);
-//     let new_color = vec4f(old_color * (1.0 - weight) + color_out * weight, 1.0);
-
-//     textureStore(accumulation_texture, id.xy, new_color);
-//     textureStore(output_texture, id.xy, new_color);
-// }
-
-fn trace_ray_tlas(ray: ptr<function, Ray>) {
-    traverse_tlas(ray);
+// https://developer.nvidia.com/blog/rendering-in-real-time-with-spatiotemporal-blue-noise-textures-part-2/
+fn next_bn_sample(rng_state: ptr<function, u32>, bn_texture_offset: vec2u, pixel_id: vec2u) -> f32 {
+    let texture_coord = bn_texture_offset + ((pixel_id + vec2u(rand_f_pair(rng_state) * 8.0) * 8u) % 64u);
+    return textureLoad(blue_noise_texture, texture_coord, 0).x;
 }
 
-fn trace_ray(ray: ptr<function, Ray>)  {
-    for (var i = 0u; i < scene_uniform.instance_count; i += 1u) {
-        traverse_blas(ray, i);
-    }
-
+fn rand_u(state: ptr<function, u32>) -> u32 {
+    // PCG hash
+    *state = *state * 747796405u + 2891336453u;
+    let word = ((*state >> ((*state >> 28u) + 4u)) ^ *state) * 277803737u;
+    return (word >> 22u) ^ word;
 }
 
-fn trace_ray_brute(ray: ptr<function, Ray>)  {
-    for (var i = 0u; i < scene_uniform.instance_count; i += 1u) {
-
-    }
+fn rand_f(state: ptr<function, u32>) -> f32 {
+    // PCG hash
+    *state = *state * 747796405u + 2891336453u;
+    let word = ((*state >> ((*state >> 28u) + 4u)) ^ *state) * 277803737u;
+    return f32((word >> 22u) ^ word) * bitcast<f32>(0x2f800004u);
 }
+
+fn rand_f_pair(state: ptr<function, u32>) -> vec2<f32> {
+    return vec2(rand_f(state), rand_f(state));
+}
+
+fn rand_range_u(n: u32, state: ptr<function, u32>) -> u32 {
+    return rand_u(state) % n;
+}
+
+// END: RANDOM NUMBER GENERATION
+//------------------------------
+
+//-------------------------------------
+// BEGIN: RAY ACCELERATION/INTERSECTION
 
 fn get_blas_node(index: u32, instance_index: u32) -> BLASNode {
     let instance = instances[instance_index];
     return blas_nodes[index + instance.node_offset];
-
-    // return blas_nodes[index];
 }
 
 fn get_primitive(index: u32, instance_index: u32) -> Primitive {
     let instance = instances[instance_index];
     let triangle_index = triangle_indices[index + instance.index_offset];
     return primitives[triangle_index + instance.triangle_offset];
-
-    // let triangle_index = triangle_indices[index];
-    // return primitives[triangle_index];
 }
 
 fn get_triangle_data(index: u32, instance_index: u32) -> TriangleData {
     let instance = instances[instance_index];
     let triangle_index = triangle_indices[index + instance.index_offset];
     return triangle_data[triangle_index + instance.triangle_offset];
+}
 
-    // let triangle_index = triangle_indices[index];
-    // return triangle_data[triangle_index];
+fn trace_ray(ray: ptr<function, Ray>) {
+    traverse_tlas(ray);
+}
+
+// Returns whether or not the ray hit anything within `distance_threshold`
+fn trace_shadow_ray(ray: ptr<function, Ray>, distance_threshold: f32) -> bool {
+    return traverse_tlas_for_shadow_ray(ray, distance_threshold);
+}
+
+fn trace_ray_blas_only(ray: ptr<function, Ray>)  {
+    for (var i = 0u; i < scene_uniform.instance_count; i += 1u) {
+        traverse_blas(ray, i);
+    }
 }
 
 fn traverse_tlas(ray: ptr<function, Ray>) {
@@ -239,7 +130,6 @@ fn traverse_tlas(ray: ptr<function, Ray>) {
     while iteration < max_iterations {
         iteration += 1;
         let node = tlas_nodes[node_index];
-
 
         if node.instance_count > 0u { // Is leaf node.
             for (var i: u32 = 0u; i < node.instance_count; i += 1u) {
@@ -258,7 +148,7 @@ fn traverse_tlas(ray: ptr<function, Ray>) {
         // Current node is an interior node, so visit child nodes in order.
         var child_a_index = node.a_or_first_instance;
         var child_b_index = child_a_index + 1u;
-        let child_a = tlas_nodes[child_a_index];
+       let child_a = tlas_nodes[child_a_index];
         let child_b = tlas_nodes[child_b_index];
         var dist_a = ray_aabb_intersect(ray, child_a.aabb_min, child_a.aabb_max);
         var dist_b = ray_aabb_intersect(ray, child_b.aabb_min, child_b.aabb_max);
@@ -289,6 +179,74 @@ fn traverse_tlas(ray: ptr<function, Ray>) {
     }
 }
 
+// Returns whether or not the ray hit anything within `distance_threshold`.
+fn traverse_tlas_for_shadow_ray(ray: ptr<function, Ray>, distance_threshold: f32) -> bool {
+    // Abort on empty/invalid root node.
+    if tlas_nodes[0].a_or_first_instance == 0u && tlas_nodes[0].instance_count == 0u {
+        return false;
+    }
+
+    var node_index = 0u;
+    var stack: array<u32, 32>;
+    var stack_ptr = 0;
+    var iteration = 0;
+    let max_iterations = 100000;
+    while iteration < max_iterations {
+        iteration += 1;
+        let node = tlas_nodes[node_index];
+
+        if node.instance_count > 0u { // Is leaf node.
+            for (var i: u32 = 0u; i < node.instance_count; i += 1u) {
+                let instance_index = instance_indices[node.a_or_first_instance + i];
+                if traverse_blas_for_shadow_ray(ray, instance_index, distance_threshold) {
+                    return true;
+                }
+            }
+            if stack_ptr == 0 {
+                break;
+            } else {
+                stack_ptr -= 1;
+                node_index = stack[stack_ptr];
+            }
+            continue;
+        }
+
+        // Current node is an interior node, so visit child nodes in order.
+        var child_a_index = node.a_or_first_instance;
+        var child_b_index = child_a_index + 1u;
+       let child_a = tlas_nodes[child_a_index];
+        let child_b = tlas_nodes[child_b_index];
+        var dist_a = ray_aabb_intersect(ray, child_a.aabb_min, child_a.aabb_max);
+        var dist_b = ray_aabb_intersect(ray, child_b.aabb_min, child_b.aabb_max);
+        if dist_a > dist_b {
+            let d = dist_a;
+            dist_a = dist_b;
+            dist_b = d;
+            let c = child_a_index;
+            child_a_index = child_b_index;
+            child_b_index = c;
+        }
+        if dist_a == 1e30f {
+            // Missed both child nodes.
+            if stack_ptr == 0 {
+                break;
+            } else  {
+                stack_ptr -= 1;
+                node_index = stack[stack_ptr];
+            }
+        } else {
+            // Use near node next and push the far node if it's intersected by the ray.
+            node_index = child_a_index;
+            if dist_b != 1e30f {
+                stack[stack_ptr] = child_b_index;
+                stack_ptr += 1;
+            }
+        }
+    }
+
+    return false;
+}
+
 // Takes world space ray.
 fn traverse_blas(ray: ptr<function, Ray>, instance_index: u32) {
     // Transform ray to object/blas space.
@@ -296,8 +254,7 @@ fn traverse_blas(ray: ptr<function, Ray>, instance_index: u32) {
     var ray_object = Ray();
     ray_object.origin = transform_position(instance.world_object, (*ray).origin);
     ray_object.dir = normalize(transform_direction(instance.world_object, (*ray).dir));
-    let t_far = 1e30;
-    ray_object.record = RayHitRecord(t_far, 0u, 0u, 0.0, 0.0);
+    ray_object.record = RayHitRecord(1e30, 0u, 0u, 0.0, 0.0);
 
     var node_index = 0u;
     var stack: array<u32, 32>;
@@ -353,10 +310,88 @@ fn traverse_blas(ray: ptr<function, Ray>, instance_index: u32) {
     let hit_position_object = ray_object.origin + ray_object.record.t * ray_object.dir;
     let hit_position_world = transform_position(instance.object_world, hit_position_object);
     let new_t_world = length(hit_position_world - (*ray).origin);
+
     if new_t_world < (*ray).record.t {
         (*ray).record = ray_object.record;
         (*ray).record.t = new_t_world;
     }
+}
+
+// Returns whether or not the ray hit anything within `distance_threshold`
+// Takes world space ray
+fn traverse_blas_for_shadow_ray(ray: ptr<function, Ray>, instance_index: u32, distance_threshold: f32) -> bool {
+    // Transform ray to object/blas space
+    let instance = instances[instance_index];
+    var ray_object = Ray();
+    ray_object.origin = transform_position(instance.world_object, (*ray).origin);
+    ray_object.dir = normalize(transform_direction(instance.world_object, (*ray).dir));
+    ray_object.record = RayHitRecord(1e30, 0u, 0u, 0.0, 0.0);
+
+    var node_index = 0u;
+    var stack: array<u32, 32>;
+    var stack_ptr = 0;
+    var iteration = 0;
+    let max_iterations = 100000;
+    while iteration < max_iterations {
+        iteration += 1;
+        let node = get_blas_node(node_index, instance_index);
+        if node.tri_count > 0u {
+            for (var i: u32 = 0u; i < node.tri_count; i += 1u) {
+                ray_triangle_intersect(&ray_object, node.a_or_first_tri + i, instance_index);
+            }
+            if stack_ptr == 0 {
+                break;
+            } else {
+                stack_ptr -= 1;
+                node_index = stack[stack_ptr];
+            }
+            continue;
+        }
+
+        var child_a_index = node.a_or_first_tri;
+        var child_b_index = child_a_index + 1u;
+        let child_a = get_blas_node(child_a_index, instance_index);
+        let child_b = get_blas_node(child_b_index, instance_index);
+        var dist_a = ray_aabb_intersect(&ray_object, child_a.aabb_min, child_a.aabb_max);
+        var dist_b = ray_aabb_intersect(&ray_object, child_b.aabb_min, child_b.aabb_max);
+        if dist_a > dist_b {
+            let d = dist_a;
+            dist_a = dist_b;
+            dist_b = d;
+            let c = child_a_index;
+            child_a_index = child_b_index;
+            child_b_index = c;
+        }
+        if dist_a == 1e30f {
+            if stack_ptr == 0 {
+                break;
+            } else  {
+                stack_ptr -= 1;
+                node_index = stack[stack_ptr];
+            }
+        } else {
+            node_index = child_a_index;
+            if dist_b != 1e30f {
+                stack[stack_ptr] = child_b_index;
+                stack_ptr += 1;
+            }
+        }
+    }
+
+    let hit_position_object = ray_object.origin + ray_object.record.t * ray_object.dir;
+    let hit_position_world = transform_position(instance.object_world, hit_position_object);
+    let new_t_world = length(hit_position_world - (*ray).origin);
+
+    if new_t_world <= distance_threshold {
+        return true;
+    }
+
+    if new_t_world < (*ray).record.t {
+        (*ray).record = ray_object.record;
+        (*ray).record.t = new_t_world;
+    }
+
+    return false;
 }
 
 fn ray_aabb_intersect(ray: ptr<function, Ray>, aabb_min: vec3<f32>, aabb_max: vec3<f32>) -> f32 {
@@ -379,26 +414,6 @@ fn ray_aabb_intersect(ray: ptr<function, Ray>, aabb_min: vec3<f32>, aabb_max: ve
         return t_min;
     } else {
         return 1e30f;
-    }
-}
-
-fn ray_sphere_intersect(ray: ptr<function, Ray>, s0: vec3<f32>, sr: f32){
-    // let t = 1.0;
-    // (*ray).record.t = t;
-    // let hit_pos = (*ray).origin + t * (*ray).dir;
-    // (*ray).record.normal = normalize(hit_pos - s0);
-
-    let a = dot((*ray).dir, (*ray).dir);
-    let s0_r0 = (*ray).origin - s0;
-    let b = 2.0 * dot((*ray).dir, s0_r0);
-    let c = dot(s0_r0, s0_r0) - (sr * sr);
-    if (b*b - 4.0*a*c >= 0.0) {
-        let t = (-b - sqrt((b*b) - 4.0*a*c))/(2.0*a);
-        if (t > 0.001 && (*ray).record.t > t) {
-            (*ray).record.t = t;
-            let hit_pos = (*ray).origin + t * (*ray).dir;
-            (*ray).record.normal = normalize(hit_pos - s0);
-        }
     }
 }
 
@@ -436,68 +451,11 @@ fn ray_triangle_intersect(ray: ptr<function, Ray>, triangle_index: u32, instance
     }
 }
 
-fn clamp_v(v: vec3f, min: f32, max: f32) -> vec3f {
-    return vec3f(clamp(v.x, min, max), clamp(v.y, min, max), clamp(v.z, min, max));
-}
+// END: RAY ACCELERATION/INTERSECTION
+//-----------------------------------
 
-// Assumes a and b are unit length.
-fn are_aligned(a: vec3f, b: vec3f, threshold: f32) -> bool {
-    let diff = a - b;
-    return length(diff) < threshold;
-}
-
-fn transform_position(m: mat4x4f, p: vec3f) -> vec3f {
-    let h = m * vec4f(p, 1.0);
-    return h.xyz / h.w;
-}
-
-fn transform_direction(m: mat4x4f, p: vec3f) -> vec3f {
-    let h = m * vec4f(p, 0.0);
-    return h.xyz;
-}
-
-fn transform_normal(m: mat4x4f, p: vec3f) -> vec3f {
-    let h = transpose(m) * vec4f(p, 0.0);
-    return h.xyz;
-}
-
-// https://developer.nvidia.com/blog/rendering-in-real-time-with-spatiotemporal-blue-noise-textures-part-2/
-fn next_bn_sample(rng_state: ptr<function, u32>, bn_texture_offset: vec2u, pixel_id: vec2u) -> f32 {
-    let texture_coord = bn_texture_offset + ((pixel_id + vec2u(rand_f_pair(rng_state) * 8.0) * 8u) % 64u);
-    return textureLoad(blue_noise_texture, texture_coord, 0).x;
-}
-
-fn rand_u(state: ptr<function, u32>) -> u32 {
-    // PCG hash
-    *state = *state * 747796405u + 2891336453u;
-    let word = ((*state >> ((*state >> 28u) + 4u)) ^ *state) * 277803737u;
-    return (word >> 22u) ^ word;
-}
-
-fn rand_f(state: ptr<function, u32>) -> f32 {
-    // PCG hash
-    *state = *state * 747796405u + 2891336453u;
-    let word = ((*state >> ((*state >> 28u) + 4u)) ^ *state) * 277803737u;
-    return f32((word >> 22u) ^ word) * bitcast<f32>(0x2f800004u);
-}
-
-fn rand_f_pair(state: ptr<function, u32>) -> vec2<f32> {
-    return vec2(rand_f(state), rand_f(state));
-}
-
-fn rand_range_u(n: u32, state: ptr<function, u32>) -> u32 {
-    return rand_u(state) % n;
-}
-
-// from https://agraphicsguynotes.com/posts/sample_microfacet_brdf/
-fn pdf_D_GGX(view: vec3f, half: vec3f, theta: f32, phi: f32, roughness: f32) -> f32 {
-    let a = roughness * roughness;
-    let cos_theta = cos(theta);
-    let denominator = 2.0 * a * cos_theta * sin(theta);
-    let d = (a - 1.0) * cos_theta + 1.0;
-    let numerator = 4.0 * dot(view, half) * d * d;
-    return denominator / numerator;
-}
+//----------------
+// BEGIN: SAMPLING
 
 fn sample_cosine_hemisphere(normal: vec3<f32>, e0: f32, e1: f32) -> vec3f {
     let cos_theta = 2.0 * e0 - 1.0;
@@ -506,7 +464,7 @@ fn sample_cosine_hemisphere(normal: vec3<f32>, e0: f32, e1: f32) -> vec3f {
     let sin_phi = sin(phi);
     let cos_phi = cos(phi);
     let unit_sphere_direction = normalize(vec3(sin_theta * cos_phi, cos_theta, sin_theta * sin_phi));
-    return normal + unit_sphere_direction;
+    return normalize(normal + unit_sphere_direction);
 }
 
 fn sample_hemisphere_rejection(normal: vec3f, state: ptr<function, u32>) -> vec3f {
@@ -524,33 +482,39 @@ fn sample_hemisphere_rejection(normal: vec3f, state: ptr<function, u32>) -> vec3
     return normal;
 }
 
+// END: SAMPLING
+//--------------
+
+//-----------------------
+// BEGIN: TRANSFORMATIONS
+
 // Orthonormal basis vectors
 struct ON {
-    e1: vec3f,
-    e2: vec3f,
-    e3: vec3f,
+    e_one: vec3f,
+    e_two: vec3f,
+    e_three: vec3f,
 }
 
 // Produces right-handed with `e2` aligned to `normal`
 fn orthonormal_from_normal(normal: vec3f) -> ON {
-    let e2 = normal;
-    var e3: vec3f;
-    if !are_aligned(e2, vec3f(1.0, 0.0, 0.0), 0.001) {
-        e3 = normalize(cross(e2, vec3f(1.0, 0.0, 0.0)));
+    let e_two = normal;
+    var e_three: vec3f;
+    if !are_aligned(e_two, vec3f(1.0, 0.0, 0.0), 0.001) {
+        e_three = normalize(cross(e_two, vec3f(1.0, 0.0, 0.0)));
     } else {
-        e3 = normalize(cross(e2, vec3f(0.0, 1.0, 0.0)));
+        e_three = normalize(cross(e_two, vec3f(0.0, 1.0, 0.0)));
     }
-    let e1 = normalize(cross(e2, e3));
-    return ON(e1, e2, e3);
+    let e_one = normalize(cross(e_two, e_three));
+    return ON(e_one, e_two, e_three);
 }
 
 // Assumes right-handed with `e2` up
 fn spherical_to_cartesian_in_on(theta: f32, phi: f32, on: ON) -> vec3f {
     let sin_theta = sin(theta);
     return 
-        (on.e1 * sin_theta * sin(phi))
-        + (on.e2 * cos(theta)
-        + (on.e3 * sin_theta * cos(phi))
+        (on.e_one * sin_theta * sin(phi))
+        + (on.e_two * cos(theta)
+        + (on.e_three * sin_theta * cos(phi))
     );
 }
 
@@ -564,9 +528,40 @@ fn spherical_to_cartesian(theta: f32, phi: f32) -> vec3f {
     );
 }
 
+fn transform_position(m: mat4x4f, p: vec3f) -> vec3f {
+    let h = m * vec4f(p, 1.0);
+    return h.xyz / h.w;
+}
+
+fn transform_direction(m: mat4x4f, p: vec3f) -> vec3f {
+    let h = m * vec4f(p, 0.0);
+    return h.xyz;
+}
+
+fn transform_normal(m: mat4x4f, p: vec3f) -> vec3f {
+    let h = transpose(m) * vec4f(p, 0.0);
+    return h.xyz;
+}
+
 // Reflects `a` about `b`. Assumes `b` is normalized.
 fn reflect(a: vec3f, b: vec3f) -> vec3f {
     return 2.0 * dot(a, b) * b - a;
+}
+
+// END: TRANSFORMATIONS
+//---------------------
+
+//-----------
+// BEGIN: GGX
+
+// from https://agraphicsguynotes.com/posts/sample_microfacet_brdf/
+fn pdf_D_GGX(view: vec3f, half: vec3f, theta: f32, phi: f32, roughness: f32) -> f32 {
+    let a = roughness * roughness;
+    let cos_theta = cos(theta);
+    let denominator = 2.0 * a * cos_theta * sin(theta);
+    let d = (a - 1.0) * cos_theta + 1.0;
+    let numerator = 4.0 * dot(view, half) * d * d;
+    return denominator / numerator;
 }
 
 fn fresnel_schlick(cos_theta: f32, f0: vec3f) -> vec3f {
@@ -655,3 +650,6 @@ fn importance_sample_ggx_d(n: vec3f, wo: vec3f, material: Material, rng_state: p
 
     return ImportanceSamplingResult(wi, reflectance);
 }
+
+// END: GGX
+//---------

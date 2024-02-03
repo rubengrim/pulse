@@ -57,7 +57,7 @@ impl SpecializedRenderPipeline for PulseUpscalingPipeline {
                 shader_defs: vec![],
                 entry_point: "upscaling_fragment_shader".into(),
                 targets: vec![Some(ColorTargetState {
-                    format: TextureFormat::Bgra8UnormSrgb,
+                    format: TextureFormat::Rgba16Float,
                     blend: None,
                     write_mask: ColorWrites::ALL,
                 })],

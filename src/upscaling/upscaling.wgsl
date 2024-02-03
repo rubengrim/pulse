@@ -42,12 +42,12 @@ fn upscaling_vertex_shader(@builtin(vertex_index) vertex_index: u32) -> Upscalin
     // clip_position = vec4<f32>(clip_position.xy * 0.2, 0.0, 1.0);
 
     // Subtract 1 from width and height because storage textures use 0-based indexing.
-    let texture_coordinates = vec2<f32>(uv.x * f32(pulse_target.width - 1u), uv.y * f32(pulse_target.height - 1u));
+    let texture_coordinates = vec2<f32>(uv.x * f32(pulse_target.width), uv.y * f32(pulse_target.height));
 
     return UpscalingVertexOutput(clip_position, uv, texture_coordinates);
 }
 
 @fragment
 fn upscaling_fragment_shader(vertex_output: UpscalingVertexOutput) -> @location(0) vec4<f32> {
-    return textureLoad(output_texture, vec2<u32>(vertex_output.texture_coordinates));
+    return textureLoad(output_texture, vec2u(vertex_output.texture_coordinates));
 }

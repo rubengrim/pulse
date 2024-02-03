@@ -2,7 +2,7 @@ use std::sync::atomic::Ordering;
 
 use crate::{
     path_tracer::pipeline::{PulsePathTracerPipeline, PulsePathTracerPipelineId},
-    scene::PulseSceneBindGroup,
+    scene::{PulseCanRender, PulseSceneBindGroup},
     utilities::*,
     PulsePathTracerAccumulationRenderTarget, PulseRenderTarget,
 };
@@ -10,7 +10,7 @@ use bevy::{
     ecs::query::QueryItem,
     prelude::*,
     render::{
-        render_graph::{NodeRunError, RenderGraphContext, ViewNode},
+        render_graph::{InputSlotError, NodeRunError, RenderGraphContext, SlotLabel, ViewNode},
         render_resource::*,
         renderer::{RenderContext, RenderDevice, RenderQueue},
         view::{ViewUniformOffset, ViewUniforms},
@@ -45,6 +45,10 @@ impl ViewNode for PulsePathTracerNode {
         >,
         world: &World,
     ) -> Result<(), NodeRunError> {
+        if !world.resource::<PulseCanRender>().0 {
+            return Ok(());
+        }
+
         let pulse_pipeline = world.resource::<PulsePathTracerPipeline>();
         let pipeline_cache = world.resource::<PipelineCache>();
 

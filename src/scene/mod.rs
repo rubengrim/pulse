@@ -1,17 +1,18 @@
 use crate::utilities::*;
 use bevy::{
-    asset::load_internal_asset,
+    asset::{load_internal_asset, LoadedFolder},
     diagnostic::{Diagnostic, DiagnosticId, Diagnostics, RegisterDiagnostic},
     prelude::*,
     render::{
+        extract_resource::{ExtractResource, ExtractResourcePlugin},
         mesh::{Indices, VertexAttributeValues},
+        render_asset::RenderAssets,
         render_resource::*,
         renderer::{RenderDevice, RenderQueue},
         Extract, Render, RenderApp, RenderSet,
     },
     utils::HashMap,
 };
-use std::sync::Mutex;
 use std::time::Instant;
 
 pub mod blas;
@@ -23,20 +24,21 @@ pub const PULSE_SCENE_BINDINGS_SHADER_HANDLE: Handle<Shader> =
     Handle::weak_from_u128(187737725855836603431472235313437654946);
 
 pub const PULSE_SCENE_TYPES_SHADER_HANDLE: Handle<Shader> =
-    Handle::weak_from_u128(187731725155836403431412235313437654946);
+    Handle::weak_from_u128(93201332748100466367972331492884310355);
+
+pub const PULSE_UTILITIES_SHADER_HANDLE: Handle<Shader> =
+    Handle::weak_from_u128(209309857616510645283619893241511474897);
 
 pub const TLAS_BUILD_TIME: DiagnosticId =
     DiagnosticId::from_u128(178146834822086073791974408528866909483);
 
 pub const INSTANCE_PREPARE_TIME: DiagnosticId =
-    DiagnosticId::from_u128(178146834822086073791974408528866909483);
+    DiagnosticId::from_u128(260990246982904911454274057946957245061);
 
 pub struct PulseScenePlugin;
 
 impl Plugin for PulseScenePlugin {
     fn build(&self, app: &mut App) {
-        // app.init_resource::<AABBsToDraw>()
-        //     .add_systems(Update, draw_aabbs);
         load_internal_asset!(
             app,
             PULSE_SCENE_BINDINGS_SHADER_HANDLE,
@@ -51,6 +53,19 @@ impl Plugin for PulseScenePlugin {
             Shader::from_wgsl
         );
 
+        load_internal_asset!(
+            app,
+            PULSE_UTILITIES_SHADER_HANDLE,
+            "../utilities.wgsl",
+            Shader::from_wgsl
+        );
+
+        app.init_resource::<BlueNoiseImageHandles>()
+            .init_resource::<BlueNoiseImageHandle>()
+            .add_plugins(ExtractResourcePlugin::<BlueNoiseImageHandles>::default())
+            .add_plugins(ExtractResourcePlugin::<BlueNoiseImageHandle>::default())
+            .add_systems(Startup, load_blue_noise_image);
+
         let render_app = app.sub_app_mut(RenderApp);
         render_app
             .add_systems(
@@ -59,21 +74,24 @@ impl Plugin for PulseScenePlugin {
                     extract_material_assets,
                     extract_mesh_assets,
                     extract_mesh_material_instances,
-                    // send_aabbs_to_app_world,
                 ),
             )
             .add_systems(
                 Render,
                 (
-                    prepare_extracted_mesh_assets,
-                    prepare_mesh_data,
-                    prepare_mesh_instances,
-                    prepare_extracted_material_assets,
-                    prepare_material_data,
+                    (
+                        prepare_extracted_mesh_assets,
+                        prepare_mesh_data,
+                        prepare_mesh_instances,
+                        prepare_extracted_material_assets,
+                        prepare_material_data,
+                        prepare_blue_noise_texture,
+                    ),
+                    queue_scene_bind_group,
                 )
+                    .chain()
                     .in_set(RenderSet::Prepare),
-            )
-            .add_systems(Render, queue_scene_bind_group.in_set(RenderSet::Queue));
+            );
 
         render_app
             .register_diagnostic(
@@ -93,12 +111,15 @@ impl Plugin for PulseScenePlugin {
             .init_resource::<ExtractedMeshMaterialInstances>()
             .init_resource::<PulseMeshIndices>()
             .init_resource::<PulseMeshInstances>()
+            .init_resource::<PulseLightData>()
             .init_resource::<PulsePreparedMeshAssetData>()
             .init_resource::<PulseSceneTLAS>()
             .init_resource::<ExtractedMaterialAssets>()
             .init_resource::<PulseMaterials>()
             .init_resource::<PulseMaterialIndices>()
-            .init_resource::<PulsePreparedMaterialAssetData>();
+            .init_resource::<PulsePreparedMaterialAssetData>()
+            .init_resource::<PulseCanRender>()
+            .init_resource::<BlueNoiseTexture>();
     }
 
     fn finish(&self, app: &mut App) {
@@ -110,48 +131,73 @@ impl Plugin for PulseScenePlugin {
 }
 
 #[derive(Resource, Default)]
-pub struct AABBsToDraw(pub Mutex<Vec<(Vec3, Vec3)>>);
+pub struct PulseCanRender(pub bool);
 
-// pub fn send_aabbs_to_app_world(
-//     main_world: ResMut<MainWorld>,
-//     instances: Res<ExtractedMeshInstances>,
-//     meshes: Res<PulseMeshes>,
-//     tlas: Res<PulseSceneTLAS>,
+#[derive(Resource, Deref, DerefMut, Default, ExtractResource, Clone)]
+pub struct BlueNoiseImageHandles(pub Vec<Handle<Image>>);
+
+// fn load_folder(
+//     asset_server: Res<AssetServer>,
+//     mut folder_handle: Local<Option<Handle<LoadedFolder>>>,
+//     folder_assets: Res<Assets<LoadedFolder>>,
+//     mut noise_image_handles: ResMut<BlueNoiseImageHandles>,
 // ) {
-//     let mut aabbs = main_world.resource::<AABBsToDraw>().0.lock().unwrap();
-//     *aabbs = vec![];
-//     // for (handle, transform) in instances.0.iter() {
-//     //     let Handle::Weak(id) = handle.clone_weak() else {
-//     //         continue;
-//     //     };
-//     //     let transform_mat = transform.compute_matrix();
-//     //     let Some(mesh) = meshes.0.get(&id) else {
-//     //         continue;
-//     //     };
-//     //     for node in &mesh.bvh.nodes {
-//     //         if node.tri_count > 0 {
-//     //             // warn!("tri_count: {}", node.tri_count);
-//     //             let min = transform_pos(transform_mat, node.aabb_min);
-//     //             let max = transform_pos(transform_mat, node.aabb_max);
-//     //             aabbs.push((min, max));
-//     //         }
-//     //     }
-//     // }
-//     for node in &tlas.0.nodes {
-//         aabbs.push((node.aabb_min, node.aabb_max));
+//     if folder_handle.is_none() {
+//         *folder_handle = Some(asset_server.load_folder("blue_noise"));
+//     } else {
+//         if let Some(folder) = folder_assets.get(folder_handle.clone().unwrap()) {
+//             if noise_image_handles.0.len() == 0 {
+//                 for image_handle in folder.handles.iter() {
+//                     noise_image_handles.0.push(image_handle.clone().typed())
+//                 }
+//             }
+//         }
 //     }
 // }
 
-// fn draw_aabbs(aabbs: Res<AABBsToDraw>, mut gizmos: Gizmos) {
-//     let aabbs = &*aabbs.0.lock().unwrap();
-//     for (min, max) in aabbs.iter() {
-//         let e = *max - *min;
-//         gizmos.cuboid(
-//             Transform::from_translation(*min + 0.5 * e).with_scale(Vec3::new(e.x, e.y, e.z)),
-//             Color::CYAN,
-//         );
+// #[derive(Resource, Default)]
+// pub struct BlueNoiseTextures(pub Option<Vec<TextureView>>);
+
+// fn prepare_blue_noise_textures(
+//     mut noise_textures: ResMut<BlueNoiseTextures>,
+//     noise_image_handles: Res<BlueNoiseImageHandles>,
+//     image_assets: Res<RenderAssets<Image>>,
+//     mut can_render: ResMut<PulseCanRender>,
+// ) {
+//     if noise_textures.0.is_none() && noise_image_handles.0.len() > 0 {
+//         can_render.0 = true;
+//         let mut views = vec![];
+//         for handle in noise_image_handles.0.iter() {
+//             let image = image_assets.get(handle.clone()).unwrap();
+//             views.push(image.texture_view.clone());
+//         }
+//         noise_textures.0 = Some(views);
 //     }
 // }
+
+#[derive(Resource, Deref, DerefMut, Default, ExtractResource, Clone)]
+pub struct BlueNoiseImageHandle(pub Option<Handle<Image>>);
+
+fn load_blue_noise_image(asset_server: Res<AssetServer>, mut handle: ResMut<BlueNoiseImageHandle>) {
+    handle.0 = Some(asset_server.load("64x64_l64_s16.png"));
+}
+
+#[derive(Resource, Default)]
+pub struct BlueNoiseTexture(pub Option<TextureView>);
+
+fn prepare_blue_noise_texture(
+    mut texture: ResMut<BlueNoiseTexture>,
+    handle: Res<BlueNoiseImageHandle>,
+    images: Res<RenderAssets<Image>>,
+    mut can_render: ResMut<PulseCanRender>,
+) {
+    if texture.0.is_none() && handle.0.is_some() {
+        if let Some(image) = images.get(handle.0.clone().unwrap()) {
+            can_render.0 = true;
+            texture.0 = Some(image.texture_view.clone());
+        }
+    }
+}
 
 #[derive(Resource, Default)]
 pub struct ExtractedMaterialAssets {
@@ -161,7 +207,7 @@ pub struct ExtractedMaterialAssets {
 
 impl ExtractedMaterialAssets {
     pub fn empty(&self) -> bool {
-        self.new_or_modified.len() == 0 && self.new_or_modified.len() == 0
+        self.new_or_modified.len() == 0 && self.removed.len() == 0
     }
 }
 
@@ -258,7 +304,7 @@ struct ExtractedMeshAssets {
 
 impl ExtractedMeshAssets {
     pub fn empty(&self) -> bool {
-        self.new_or_modified.len() == 0 && self.new_or_modified.len() == 0
+        self.new_or_modified.len() == 0 && self.removed.len() == 0
     }
 }
 
@@ -297,6 +343,19 @@ pub struct PulseTriangleData {
 #[derive(Default, ShaderType, Clone, Debug)]
 pub struct PulsePrimitive {
     pub positions: [Vec3; 3],
+}
+
+impl PulsePrimitive {
+    pub fn p0(&self) -> Vec3 {
+        self.positions[0]
+    }
+
+    pub fn p1(&self) -> Vec3 {
+        self.positions[1]
+    }
+    pub fn p2(&self) -> Vec3 {
+        self.positions[2]
+    }
 }
 
 pub struct PulseMesh {
@@ -400,6 +459,7 @@ pub struct PulsePreparedMeshAssetData {
 #[derive(ShaderType, Copy, Clone, Debug)]
 pub struct PulseMeshIndex {
     pub triangle_offset: u32,
+    pub triangle_count: u32,
     pub index_offset: u32,
     pub node_offset: u32,
 }
@@ -429,6 +489,7 @@ fn prepare_mesh_data(
             id.clone(),
             PulseMeshIndex {
                 triangle_offset,
+                triangle_count: mesh.primitives.len() as u32,
                 index_offset,
                 node_offset,
             },
@@ -482,26 +543,45 @@ pub struct PulseSceneTLAS(pub PulseTLAS);
 #[derive(Resource, Default, Debug)]
 pub struct PulseMeshInstances(pub Vec<PulseMeshInstance>);
 
+#[derive(ShaderType, Copy, Clone, Debug)]
+pub struct PulseLightDataIndex {
+    pub cdf_offset: u32,
+    pub mesh_instance_index: u32,
+}
+
+#[derive(Resource, Default)]
+pub struct PulseLightData {
+    pub cdfs: Vec<f32>,
+    pub light_data_indices: Vec<PulseLightDataIndex>,
+}
+
 fn prepare_mesh_instances(
     extracted: Res<ExtractedMeshMaterialInstances>,
     mesh_indices: Res<PulseMeshIndices>,
     mesh_data: Res<PulsePreparedMeshAssetData>,
+    mut light_data: ResMut<PulseLightData>,
+    material_data: Res<PulsePreparedMaterialAssetData>,
     material_indices: Res<PulseMaterialIndices>,
     mut mesh_instances: ResMut<PulseMeshInstances>,
     mut tlas: ResMut<PulseSceneTLAS>,
     mut diagnostics: Diagnostics,
 ) {
+    let instance_prepare_start_time = Instant::now();
+
     mesh_instances.0 = vec![];
     let mut instance_primitives: Vec<PulsePrimitiveMeshInstance> = vec![]; // Used for TLAS creation.
 
-    let instance_prepare_start_time = Instant::now();
+    // Create a cdf based on triangle size for every emissive mesh instance and store consecutively in `cdf_buffer`.
+    let mut cdfs = vec![];
+    let mut light_data_indices = vec![];
+
     for (mesh_handle, material_handle, transform) in &extracted.0 {
         let (Handle::Weak(mesh_id), Handle::Weak(material_id)) =
             (mesh_handle.clone_weak(), material_handle.clone_weak())
         else {
             continue;
         };
-        let (Some(mesh_index), Some(material_index)) = (
+        let (Some(mesh_index), Some(&material_index)) = (
             mesh_indices.0.get(&mesh_id),
             material_indices.0.get(&material_id),
         ) else {
@@ -513,13 +593,30 @@ fn prepare_mesh_instances(
             transform,
             transform_inv,
             mesh_index: mesh_index.clone(),
-            material_index: *material_index,
+            material_index,
         });
 
+        let material = material_data.0[material_index as usize].clone();
+        if material.emissive.xyz().length() > 0.0001 {
+            // Primitives of CURRENT mesh
+            let mut primitives: Vec<PulsePrimitive> = Vec::new();
+            primitives.extend_from_slice(
+                &mesh_data.primitives[mesh_index.triangle_offset as usize
+                    ..(mesh_index.triangle_offset + mesh_index.triangle_count) as usize],
+            );
+
+            let mut cdf = create_triangle_area_cdf(&primitives);
+            light_data_indices.push(PulseLightDataIndex {
+                cdf_offset: cdfs.len() as u32,
+                mesh_instance_index: mesh_instances.0.len() as u32,
+            });
+            cdfs.append(&mut cdf);
+        }
+
+        // Calculate world space bounds.
         let root_node = &mesh_data.nodes[mesh_index.node_offset as usize];
         let b_min = root_node.aabb_min;
         let b_max = root_node.aabb_max;
-        // Calculate world space bounds.
         let mut b_min_world = Vec3::MAX;
         let mut b_max_world = Vec3::MIN;
 
@@ -574,6 +671,10 @@ fn prepare_mesh_instances(
             center,
         });
     }
+
+    light_data.cdfs = cdfs;
+    light_data.light_data_indices = light_data_indices;
+
     diagnostics.add_measurement(INSTANCE_PREPARE_TIME, || {
         instance_prepare_start_time.elapsed().as_secs_f64() * 1000.0
     });
@@ -583,6 +684,32 @@ fn prepare_mesh_instances(
     diagnostics.add_measurement(TLAS_BUILD_TIME, || {
         tlas_time_begin.elapsed().as_secs_f64() * 1000.0
     });
+}
+
+fn create_triangle_area_cdf(primitives: &Vec<PulsePrimitive>) -> Vec<f32> {
+    let mut areas = vec![];
+    for p in primitives.iter() {
+        // Heron's formula for triangle area
+        let a = (p.p1() - p.p0()).length();
+        let b = (p.p2() - p.p0()).length();
+        let c = (p.p2() - p.p1()).length();
+        let s = 0.5 * (a + b + c);
+        let area = (s * (s - a) * (s - b) * (s - c)).sqrt();
+        areas.push(area);
+    }
+
+    let total_area: f32 = areas.iter().sum();
+    let normalized_areas = areas.iter().map(|a| a / total_area).collect::<Vec<f32>>();
+
+    let mut prev = 0.0;
+    let mut cdf = vec![];
+    for a in normalized_areas.iter() {
+        let current = prev + a;
+        cdf.push(current);
+        prev = current;
+    }
+
+    return cdf;
 }
 
 #[derive(Resource)]
@@ -693,6 +820,40 @@ impl FromWorld for PulseSceneBindGroupLayout {
                     },
                     count: None,
                 },
+                // Blue noise textures
+                BindGroupLayoutEntry {
+                    binding: 9,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Texture {
+                        sample_type: TextureSampleType::Float { filterable: true },
+                        view_dimension: TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    // count: NonZeroU32::new(64),
+                    count: None,
+                },
+                // Light CDFs
+                BindGroupLayoutEntry {
+                    binding: 10,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // Light indices
+                BindGroupLayoutEntry {
+                    binding: 11,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         }))
     }
@@ -701,6 +862,7 @@ impl FromWorld for PulseSceneBindGroupLayout {
 #[derive(ShaderType, Default)]
 pub struct PulseSceneUniform {
     pub instance_count: u32,
+    pub light_count: u32,
 }
 
 #[derive(Resource, Default)]
@@ -711,14 +873,22 @@ fn queue_scene_bind_group(
     mesh_data: Res<PulsePreparedMeshAssetData>,
     material_data: Res<PulsePreparedMaterialAssetData>,
     instances: Res<PulseMeshInstances>,
+    light_data: Res<PulseLightData>,
     tlas: Res<PulseSceneTLAS>,
     mut bind_group: ResMut<PulseSceneBindGroup>,
     layout: Res<PulseSceneBindGroupLayout>,
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
+    blue_noise_texture: Res<BlueNoiseTexture>,
+    can_render: Res<PulseCanRender>,
 ) {
+    if !can_render.0 {
+        return;
+    }
+
     let uniform = PulseSceneUniform {
         instance_count: instances.0.len() as u32,
+        light_count: light_data.light_data_indices.len() as u32,
     };
 
     let uniform_buffer = create_uniform_buffer(
@@ -784,6 +954,25 @@ fn queue_scene_bind_group(
         &render_queue,
     );
 
+    let light_cdf_buffer = create_storage_buffer(
+        light_data.cdfs.clone(),
+        Some("pulse_light_cdf_buffer"),
+        &render_device,
+        &render_queue,
+    );
+
+    let light_index_buffer = create_storage_buffer(
+        light_data.light_data_indices.clone(),
+        Some("pulse_light_index_buffer"),
+        &render_device,
+        &render_queue,
+    );
+
+    // info!(
+    //     " AAAAAAAAAAAAAAAAAAAAAAAAAA {:?} BBBBBBBBBBBBBBBBBBBB",
+    //     mesh_data.primitives.len()
+    // );
+
     bind_group.0 = Some(render_device.create_bind_group(
         Some("pulse_scene_bind_group"),
         &layout.0,
@@ -823,6 +1012,28 @@ fn queue_scene_bind_group(
             BindGroupEntry {
                 binding: 8,
                 resource: material_buffer.binding().unwrap(),
+            },
+            BindGroupEntry {
+                binding: 9,
+                // resource: BindingResource::TextureViewArray(
+                //     blue_noise_textures
+                //         .0
+                //         .as_ref()
+                //         .unwrap()
+                //         .iter()
+                //         .map(|v| &**v)
+                //         .collect::<Vec<_>>()
+                //         .as_slice(),
+                // ),
+                resource: BindingResource::TextureView(&blue_noise_texture.0.as_ref().unwrap()),
+            },
+            BindGroupEntry {
+                binding: 10,
+                resource: light_cdf_buffer.binding().unwrap(),
+            },
+            BindGroupEntry {
+                binding: 11,
+                resource: light_index_buffer.binding().unwrap(),
             },
         ],
     ));
