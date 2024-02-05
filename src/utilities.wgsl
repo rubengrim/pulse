@@ -40,8 +40,11 @@ fn clamp_v(v: vec3f, min: f32, max: f32) -> vec3f {
 
 // Assumes a and b are unit length.
 fn are_aligned(a: vec3f, b: vec3f, threshold: f32) -> bool {
-    let diff = a - b;
-    return length(diff) < threshold;
+    return length(a - b) < threshold;
+}
+
+fn are_close(a: f32, b: f32, threshold: f32) -> bool {
+    return abs(a - b) < threshold;
 }
 
 // END: MISC

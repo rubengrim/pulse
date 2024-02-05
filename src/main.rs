@@ -84,12 +84,12 @@ fn setup(
     //     ..Default::default()
     // });
 
-    // let particle_test = asset_server.load("particle_test.glb#Scene0");
-    // commands.spawn(SceneBundle {
-    //     scene: particle_test.clone(),
-    //     // transform: Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, 0.0, -PI / 2.0, 0.0)),
-    //     ..Default::default()
-    // });
+    let monkey = asset_server.load("monkey_smooth.glb#Scene0");
+    commands.spawn(SceneBundle {
+        scene: monkey.clone(),
+        // transform: Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, 0.0, -PI / 2.0, 0.0)),
+        ..Default::default()
+    });
 
     // let statue = asset_server.load("statue.glb#Scene0");
     // commands.spawn((
@@ -101,40 +101,38 @@ fn setup(
     //     MeshToSample,
     // ));
 
-    commands.spawn((PbrBundle {
-        mesh: mesh_assets.add(Mesh::from(shape::Cube::default())),
-        material: mat_assets.add(StandardMaterial {
-            base_color: Color::rgb(1.0, 1.0, 1.0),
-            emissive: Color::rgb(0.0, 0.0, 0.0),
-            perceptual_roughness: 1.0,
-            metallic: 0.0,
-            reflectance: 0.0,
-            opaque_render_method: OpaqueRendererMethod::Deferred,
-            ..default()
-        }),
-        ..default()
-    },));
-
-    // commands.spawn((
-    //     PbrBundle {
-    //         mesh: mesh_assets.add(Mesh::from(shape::UVSphere::default())),
-    //         material: mat_assets.add(StandardMaterial {
-    //             base_color: Color::rgb(1.0, 1.0, 1.0),
-    //             emissive: Color::rgb(0.0, 0.0, 0.0),
-    //             perceptual_roughness: 1.0,
-    //             metallic: 0.0,
-    //             reflectance: 0.0,
-    //             opaque_render_method: OpaqueRendererMethod::Deferred,
-    //             ..default()
-    //         }),
+    // commands.spawn((PbrBundle {
+    //     mesh: mesh_assets.add(Mesh::from(shape::Cube::default())),
+    //     material: mat_assets.add(StandardMaterial {
+    //         base_color: Color::rgb(1.0, 1.0, 1.0),
+    //         emissive: Color::rgb(0.0, 0.0, 0.0),
+    //         perceptual_roughness: 1.0,
+    //         metallic: 0.0,
+    //         reflectance: 0.0,
+    //         opaque_render_method: OpaqueRendererMethod::Deferred,
     //         ..default()
-    //     },
-    // ));
+    //     }),
+    //     ..default()
+    // },));
+
+    // commands.spawn((PbrBundle {
+    //     mesh: mesh_assets.add(Mesh::from(shape::UVSphere::default())),
+    //     material: mat_assets.add(StandardMaterial {
+    //         base_color: Color::rgb(1.0, 1.0, 1.0),
+    //         emissive: Color::rgb(0.0, 0.0, 0.0),
+    //         perceptual_roughness: 1.0,
+    //         metallic: 0.0,
+    //         reflectance: 0.0,
+    //         opaque_render_method: OpaqueRendererMethod::Deferred,
+    //         ..default()
+    //     }),
+    //     ..default()
+    // },));
 
     commands.spawn((
         PbrBundle {
-            mesh: mesh_assets.add(Mesh::from(shape::Plane::from_size(0.3))),
-            transform: Transform::from_translation(Vec3::new(0.0, 1.2, 0.0)),
+            mesh: mesh_assets.add(Mesh::from(shape::Plane::from_size(1.0))),
+            transform: Transform::from_translation(Vec3::new(2.0, 2.0, 0.0)),
             material: mat_assets.add(StandardMaterial {
                 base_color: Color::rgb(1.0, 1.0, 1.0),
                 emissive: Color::rgb(1.0, 1.0, 1.0) * 1.0,
