@@ -70,7 +70,7 @@ struct Material {
 }
 
 struct LightDataIndex {
+    // Offset into `light_emission_strength_cdf`. Count is obtained from `MeshInstance::triangle_count`.
     cdf_offset: u32,
-    // triangle_count: u32, // Also number of values in cdf
     mesh_instance_index: u32,
 }

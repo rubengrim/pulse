@@ -551,7 +551,9 @@ pub struct PulseLightDataIndex {
 
 #[derive(Resource, Default)]
 pub struct PulseLightData {
-    pub cdfs: Vec<f32>,
+    pub emission_strength_cdf: Vec<f32>,
+    pub light_mesh_areas: Vec<f32>,
+    pub triangle_cdfs: Vec<f32>,
     pub light_data_indices: Vec<PulseLightDataIndex>,
 }
 
@@ -573,7 +575,9 @@ fn prepare_mesh_instances(
 
     // Create a cdf based on triangle size for every emissive mesh instance and store consecutively in `cdf_buffer`.
     let mut cdfs = vec![];
+    let mut light_mesh_areas = vec![];
     let mut light_data_indices = vec![];
+    let mut light_emission_strengths = vec![];
 
     for (mesh_handle, material_handle, transform) in &extracted.0 {
         let (Handle::Weak(mesh_id), Handle::Weak(material_id)) =
@@ -598,6 +602,8 @@ fn prepare_mesh_instances(
 
         let material = material_data.0[material_index as usize].clone();
         if material.emissive.xyz().length() > 0.0001 {
+            light_emission_strengths.push(material.emissive.xyz().length_squared());
+
             // Primitives of CURRENT mesh
             let mut primitives: Vec<PulsePrimitive> = Vec::new();
             primitives.extend_from_slice(
@@ -605,12 +611,13 @@ fn prepare_mesh_instances(
                     ..(mesh_index.triangle_offset + mesh_index.triangle_count) as usize],
             );
 
-            let mut cdf = create_triangle_area_cdf(&primitives);
+            let (mut cdf, total_area) = create_triangle_area_cdf(&primitives);
             light_data_indices.push(PulseLightDataIndex {
                 cdf_offset: cdfs.len() as u32,
-                mesh_instance_index: mesh_instances.0.len() as u32,
+                mesh_instance_index: mesh_instances.0.len() as u32 - 1u32,
             });
             cdfs.append(&mut cdf);
+            light_mesh_areas.push(total_area);
         }
 
         // Calculate world space bounds.
@@ -672,7 +679,9 @@ fn prepare_mesh_instances(
         });
     }
 
-    light_data.cdfs = cdfs;
+    light_data.emission_strength_cdf = create_emission_strength_cdf(&light_emission_strengths);
+    light_data.triangle_cdfs = cdfs;
+    light_data.light_mesh_areas = light_mesh_areas;
     light_data.light_data_indices = light_data_indices;
 
     diagnostics.add_measurement(INSTANCE_PREPARE_TIME, || {
@@ -686,7 +695,8 @@ fn prepare_mesh_instances(
     });
 }
 
-fn create_triangle_area_cdf(primitives: &Vec<PulsePrimitive>) -> Vec<f32> {
+// Returns (cdf, total area)
+fn create_triangle_area_cdf(primitives: &Vec<PulsePrimitive>) -> (Vec<f32>, f32) {
     let mut areas = vec![];
     for p in primitives.iter() {
         // Heron's formula for triangle area
@@ -705,6 +715,24 @@ fn create_triangle_area_cdf(primitives: &Vec<PulsePrimitive>) -> Vec<f32> {
     let mut cdf = vec![];
     for a in normalized_areas.iter() {
         let current = prev + a;
+        cdf.push(current);
+        prev = current;
+    }
+
+    return (cdf, total_area);
+}
+
+fn create_emission_strength_cdf(strengths: &Vec<f32>) -> Vec<f32> {
+    let total_strength: f32 = strengths.iter().sum();
+    let normalized_strengths = strengths
+        .iter()
+        .map(|s| s / total_strength)
+        .collect::<Vec<f32>>();
+
+    let mut prev = 0.0;
+    let mut cdf = vec![];
+    for s in normalized_strengths.iter() {
+        let current = prev + s;
         cdf.push(current);
         prev = current;
     }
@@ -832,7 +860,7 @@ impl FromWorld for PulseSceneBindGroupLayout {
                     // count: NonZeroU32::new(64),
                     count: None,
                 },
-                // Light CDFs
+                // Light emission strength CDF
                 BindGroupLayoutEntry {
                     binding: 10,
                     visibility: ShaderStages::COMPUTE,
@@ -843,9 +871,31 @@ impl FromWorld for PulseSceneBindGroupLayout {
                     },
                     count: None,
                 },
-                // Light indices
+                // Light triangle area CDFs
                 BindGroupLayoutEntry {
                     binding: 11,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // Light mesh areas
+                BindGroupLayoutEntry {
+                    binding: 12,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // Light indices
+                BindGroupLayoutEntry {
+                    binding: 13,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Storage { read_only: true },
@@ -954,9 +1004,23 @@ fn queue_scene_bind_group(
         &render_queue,
     );
 
-    let light_cdf_buffer = create_storage_buffer(
-        light_data.cdfs.clone(),
-        Some("pulse_light_cdf_buffer"),
+    let light_emission_strength_cdf_buffer = create_storage_buffer(
+        light_data.emission_strength_cdf.clone(),
+        Some("pulse_light_strength_cdf_buffer"),
+        &render_device,
+        &render_queue,
+    );
+
+    let light_triangle_area_cdf_buffer = create_storage_buffer(
+        light_data.triangle_cdfs.clone(),
+        Some("pulse_light_area_cdf_buffer"),
+        &render_device,
+        &render_queue,
+    );
+
+    let light_mesh_area_buffer = create_storage_buffer(
+        light_data.light_mesh_areas.clone(),
+        Some("pulse_light_area_buffer"),
         &render_device,
         &render_queue,
     );
@@ -970,7 +1034,11 @@ fn queue_scene_bind_group(
 
     // info!(
     //     " AAAAAAAAAAAAAAAAAAAAAAAAAA {:?} BBBBBBBBBBBBBBBBBBBB",
-    //     mesh_data.primitives.len()
+    //     instances.0
+    // );
+    // info!(
+    //     " CCCCCCCCCCCCCCCC {:?} DDDDDDDDDD ",
+    //     light_data.light_mesh_areas,
     // );
 
     bind_group.0 = Some(render_device.create_bind_group(
@@ -1015,24 +1083,22 @@ fn queue_scene_bind_group(
             },
             BindGroupEntry {
                 binding: 9,
-                // resource: BindingResource::TextureViewArray(
-                //     blue_noise_textures
-                //         .0
-                //         .as_ref()
-                //         .unwrap()
-                //         .iter()
-                //         .map(|v| &**v)
-                //         .collect::<Vec<_>>()
-                //         .as_slice(),
-                // ),
                 resource: BindingResource::TextureView(&blue_noise_texture.0.as_ref().unwrap()),
             },
             BindGroupEntry {
                 binding: 10,
-                resource: light_cdf_buffer.binding().unwrap(),
+                resource: light_emission_strength_cdf_buffer.binding().unwrap(),
             },
             BindGroupEntry {
                 binding: 11,
+                resource: light_triangle_area_cdf_buffer.binding().unwrap(),
+            },
+            BindGroupEntry {
+                binding: 12,
+                resource: light_mesh_area_buffer.binding().unwrap(),
+            },
+            BindGroupEntry {
+                binding: 13,
                 resource: light_index_buffer.binding().unwrap(),
             },
         ],

@@ -34,6 +34,14 @@ const INV_PI: f32 = 0.31830988618;
 //------------
 // BEGIN: MISC
 
+fn length_sq(v: vec3f) -> f32 {
+    return v.x * v.x + v.y * v.y + v.z * v.z;
+}
+
+fn distance_sq(v1: vec3f, v2: vec3f) -> f32 {
+    return length_sq(v1 - v2);
+}
+
 fn clamp_v(v: vec3f, min: f32, max: f32) -> vec3f {
     return vec3f(clamp(v.x, min, max), clamp(v.y, min, max), clamp(v.z, min, max));
 }
@@ -66,6 +74,10 @@ fn rand_u(state: ptr<function, u32>) -> u32 {
     return (word >> 22u) ^ word;
 }
 
+fn rand_range_u(n: u32, state: ptr<function, u32>) -> u32 {
+    return rand_u(state) % n;
+}
+
 fn rand_f(state: ptr<function, u32>) -> f32 {
     // PCG hash
     *state = *state * 747796405u + 2891336453u;
@@ -75,10 +87,6 @@ fn rand_f(state: ptr<function, u32>) -> f32 {
 
 fn rand_f_pair(state: ptr<function, u32>) -> vec2<f32> {
     return vec2(rand_f(state), rand_f(state));
-}
-
-fn rand_range_u(n: u32, state: ptr<function, u32>) -> u32 {
-    return rand_u(state) % n;
 }
 
 // END: RANDOM NUMBER GENERATION
