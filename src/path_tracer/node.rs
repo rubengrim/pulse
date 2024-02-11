@@ -10,7 +10,7 @@ use bevy::{
     ecs::query::QueryItem,
     prelude::*,
     render::{
-        render_graph::{InputSlotError, NodeRunError, RenderGraphContext, SlotLabel, ViewNode},
+        render_graph::{NodeRunError, RenderGraphContext, ViewNode},
         render_resource::*,
         renderer::{RenderContext, RenderDevice, RenderQueue},
         view::{ViewUniformOffset, ViewUniforms},

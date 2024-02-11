@@ -1,42 +1,32 @@
-use std::sync::atomic::Ordering;
-
-use crate::{
-    path_tracer::pipeline::{PulsePathTracerPipeline, PulsePathTracerPipelineId},
-    scene::{PulseCanRender, PulseSceneBindGroup},
-    utilities::*,
-    PulsePathTracerAccumulationRenderTarget, PulseRenderTarget,
-};
+use crate::{scene::PulseSceneBindGroup, utilities::create_uniform_buffer};
 use bevy::{
-    core_pipeline::prepass::ViewPrepassTextures,
     ecs::query::QueryItem,
-    pbr::{
-        deferred::{DeferredLightingPipeline, PbrDeferredLightingDepthId},
-        MeshViewBindGroup, ViewFogUniformOffset, ViewLightsUniformOffset,
-    },
+    pbr::{MeshViewBindGroup, ViewFogUniformOffset, ViewLightsUniformOffset},
     prelude::*,
     render::{
-        render_graph::{InputSlotError, NodeRunError, RenderGraphContext, SlotLabel, ViewNode},
+        render_graph::{NodeRunError, RenderGraphContext, ViewNode},
         render_resource::*,
-        renderer::{RenderContext, RenderDevice, RenderQueue},
-        view::{ViewTarget, ViewUniformOffset, ViewUniforms},
+        renderer::{RenderContext, RenderQueue},
+        view::ViewUniformOffset,
     },
 };
 
 use super::{
     pipeline::{PulseGILayout, PulseGIPipeline},
-    PulseGI,
+    PulseGIRenderTarget, PulseSettings, PulseShadowRenderTarget,
 };
 
-pub struct PulseGINode;
+pub struct PulseNode;
 
-impl PulseGINode {
+impl PulseNode {
     pub const NAME: &'static str = "pulse_gi_node";
 }
 
-impl ViewNode for PulseGINode {
+impl ViewNode for PulseNode {
     type ViewQuery = (
-        &'static PulseGI,
-        &'static PulseRenderTarget,
+        &'static PulseSettings,
+        &'static PulseGIRenderTarget,
+        &'static PulseShadowRenderTarget,
         &'static PulseGIPipeline,
         &'static ViewUniformOffset,
         &'static ViewLightsUniformOffset,
@@ -51,8 +41,9 @@ impl ViewNode for PulseGINode {
         _graph: &mut RenderGraphContext,
         render_context: &mut RenderContext,
         (
-            pulse_gi,
-            render_target,
+            _pulse_settings,
+            gi_render_target,
+            shadow_render_target,
             pulse_pipeline,
             view_offset,
             view_lights_offset,
@@ -72,20 +63,61 @@ impl ViewNode for PulseGINode {
             return Ok(());
         };
 
+        let uniform = PulseUniform {
+            width: gi_render_target.width,
+            height: gi_render_target.height,
+        };
+
+        let uniform_buffer = create_uniform_buffer(
+            uniform,
+            Some("pulse_resolution_uniform"),
+            render_context.render_device(),
+            world.resource::<RenderQueue>(),
+        );
+
         let view_bind_group = render_context.render_device().create_bind_group(
-            Some("pulse_gi_view_bind_group"),
+            Some("pulse_view_bind_group"),
             &pulse_layout.view_layout,
-            &[BindGroupEntry {
-                binding: 0,
-                resource: BindingResource::TextureView(render_target.view()),
-            }],
+            &[
+                // GI target view
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&gi_render_target.texture.default_view),
+                },
+                // Shadow target view
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(
+                        &shadow_render_target.texture.default_view,
+                    ),
+                },
+                // Sampler
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::Sampler(
+                        &render_context
+                            .render_device()
+                            .create_sampler(&SamplerDescriptor {
+                                // Deferred texture is packed, can't interpolate
+                                mag_filter: FilterMode::Nearest,
+                                min_filter: FilterMode::Nearest,
+                                ..default()
+                            }),
+                    ),
+                },
+                // Resolution uniform
+                BindGroupEntry {
+                    binding: 3,
+                    resource: uniform_buffer.binding().unwrap(),
+                },
+            ],
         );
 
         let mut compute_pass =
             render_context
                 .command_encoder()
                 .begin_compute_pass(&ComputePassDescriptor {
-                    label: Some("pulse_gi_pass"),
+                    label: Some("pulse_pass"),
                 });
 
         compute_pass.set_bind_group(
@@ -100,16 +132,23 @@ impl ViewNode for PulseGINode {
         compute_pass.set_bind_group(1, &scene_bind_group, &[]);
         compute_pass.set_bind_group(2, &view_bind_group, &[]);
         compute_pass.set_pipeline(&pipeline);
-        let num_workgroups_x = (render_target.width() as f32 / 16.0).ceil() as u32;
-        let num_workgroups_y = (render_target.height() as f32 / 16.0).ceil() as u32;
+        let num_workgroups_x = (gi_render_target.width as f32 / 16.0).ceil() as u32;
+        let num_workgroups_y = (gi_render_target.height as f32 / 16.0).ceil() as u32;
         compute_pass.dispatch_workgroups(num_workgroups_x, num_workgroups_y, 1);
 
         Ok(())
     }
 }
 
-impl FromWorld for PulseGINode {
+impl FromWorld for PulseNode {
     fn from_world(_world: &mut World) -> Self {
         Self
     }
+}
+
+#[derive(ShaderType, Clone, Copy)]
+pub struct PulseUniform {
+    width: u32,
+    height: u32,
+    // sample_count: u32,
 }

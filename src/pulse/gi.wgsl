@@ -8,7 +8,7 @@
 }
 #import bevy_render::view::View
 #import pulse::{
-    utilities::{
+    utils::{
         TWO_PI,
         rand_f,
         rand_f_pair,
@@ -41,103 +41,32 @@
     },
 }
 
+struct PulseUniform {
+    width: u32,
+    height: u32,
+}
+
 // TODO: Use constant value for ray origin offset
 
-@group(2) @binding(0) var pulse_output_texture: texture_storage_2d<rgba32float, read_write>;
-
-// @compute @workgroup_size(16, 16, 1)
-// fn gi(@builtin(global_invocation_id) id: vec3<u32>) { 
-//     let pixel_index = id.x + id.y * u32(view.viewport.z);
-//     var rng_state = pixel_index * 5817321u;
-
-//     var color_out = vec3f(0.0);
-//     let spp = 2u;
-//     let spp_inv = 1.0 / f32(spp);
-//     for (var sample: u32 = 0u; sample < spp; sample += 1u) {
-//         // let pixel_jitter = rand_f_pair(&rng_state);
-//         let pixel_jitter = vec2f(0.0);
-//         var pixel_uv = (vec2<f32>(id.xy) + pixel_jitter) / view.viewport.zw;
-
-//         // Clip position goes from -1 to 1.
-//         let pixel_clip_pos = (pixel_uv * 2.0) - 1.0;
-//         let ray_target = view.inverse_view_proj * vec4<f32>(pixel_clip_pos.x, -pixel_clip_pos.y, 1.0, 1.0);
-//         var ray = Ray(); // Should always be kept in world space.
-//         ray.origin = view.world_position;
-//         ray.dir = normalize((ray_target.xyz / ray_target.w) - ray.origin);
-//         let t_far = 1e30;
-//         ray.record = RayHitRecord(t_far, 0u, 0u, 0.0, 0.0);
-
-//         var throughput = vec3f(1.0);
-//         var color = vec3f(0.0);
-
-//         let max_depth: u32 = 3u;
-//         for (var depth: u32 = 0u; depth < max_depth; depth += 1u) {
-//             trace_ray(&ray);
-//             if ray.record.t >= t_far  {
-//                 // Miss
-//                 // color += throughput * vec3<f32>(0.03, 0.03, 0.03);
-//                 break;
-//             } else {
-//                 // Hit
-//                 let instance = instances[ray.record.instance_index];
-//                 let t_idx = triangle_indices[instance.index_offset + ray.record.triangle_index];
-//                 let t = triangle_data[instance.triangle_offset + t_idx];
-//                 let w = 1.0 - (ray.record.u + ray.record.v);
-//                 let normal = w * t.n_first + ray.record.u * t.n_second + ray.record.v * t.n_third;
-//                 let world_normal = normalize(transform_direction(instance.object_world, normal));
-//                 let world_hit_position = ray.origin + ray.record.t * ray.dir;
-
-//                 let material_index = instance.material_index;
-//                 let material = materials[material_index];
-
-//                 if depth == 0u {
-//                     color += throughput * material.emissive.xyz;
-//                 }
-
-//                 let direct_light = sample_direct_light(world_hit_position, world_normal, material.base_color.xyz, &rng_state);
-//                 color += throughput * direct_light;
-//                 throughput *= material.base_color.xyz;
+@group(2) @binding(0) var gi_output: texture_storage_2d<rgba32float, read_write>;
+@group(2) @binding(1) var shadow_output: texture_storage_2d<rgba32float, read_write>;
+@group(2) @binding(2) var deferred_texture_sampler: sampler;
+@group(2) @binding(3) var<uniform> pulse_uniform: PulseUniform;
 
 
-
-//                 // color += throughput * material.emissive.xyz;
-//                 // throughput *= material.base_color.xyz;
-
-//                 let p = max(max(throughput.r, throughput.g), throughput.b);
-//                 if rand_f(&rng_state) > p { 
-//                     break; 
-//                 }
-//                 throughput *= 1.0 / p;
-
-//                 let e0 = rand_f(&rng_state);
-//                 let e1 = rand_f(&rng_state);
-//                 let scatter_dir = sample_cosine_hemisphere(world_normal, e0, e1);
-//                 // let scatter_dir = pulse::utilities::sample_hemisphere_rejection(world_normal, &rng_state);
-//                 ray.dir = scatter_dir;
-//                 ray.origin = world_hit_position + 0.001 * world_normal;
-//                 ray.record = RayHitRecord(t_far, 0u, 0u, 0.0, 0.0);
-//             }
-//         }  
-
-//         color_out += color * spp_inv;
-//     }
-
-//     textureStore(pulse_output_texture, id.xy, vec4f(color_out, 1.0));
-// }
-
-// Trace from deferred texture
 @compute @workgroup_size(16, 16, 1)
 fn gi(@builtin(global_invocation_id) id: vec3<u32>) { 
-    let pixel_index = id.x + id.y * u32(view.viewport.z);
+    let pixel_index = id.x + id.y * u32(pulse_uniform.width);
     var rng_state = pixel_index * 5817321u;
 
-    // Fragment position pixel center is offset 0.5 from integer number.
-    // https://www.w3.org/TR/WGSL/#position-builtin-value
-    let fragment_position = vec2f(id.xy) + 0.5;
-    var frag_coord = vec4f(fragment_position, 0.0, 0.0);
-    frag_coord.z = prepass_utils::prepass_depth(frag_coord, 0u);
-    let deferred_data = textureLoad(deferred_prepass_texture, vec2<i32>(frag_coord.xy), 0);
-    var pbr_input = pbr_input_from_deferred_gbuffer(frag_coord, deferred_data);
+
+    let pixel_uv = vec2f(id.xy) / vec2f(f32(pulse_uniform.width), f32(pulse_uniform.height));
+    // + 0.5 to get to fragment center
+    var deferred_texture_coord = vec4f(vec2f(vec2u(pixel_uv * view.viewport.zw)) + 0.5, 0.0, 0.0);
+    // var frag_coord = vec4f(fragment_position, 0.0, 0.0);
+    deferred_texture_coord.z = prepass_utils::prepass_depth(deferred_texture_coord, 0u);
+    let deferred_data = textureLoad(deferred_prepass_texture, vec2i(deferred_texture_coord.xy), 0);
+    var pbr_input = pbr_input_from_deferred_gbuffer(deferred_texture_coord, deferred_data);
 
     var color_out = vec3f(0.0);
     let spp = 2u;
@@ -155,11 +84,7 @@ fn gi(@builtin(global_invocation_id) id: vec3<u32>) {
         var color = pbr_input.material.emissive.xyz + direct_light;
         var throughput = pbr_input.material.base_color.xyz;
 
-        // No NNE
-        // var color = pbr_input.material.emissive.xyz;
-        // var throughput = pbr_input.material.base_color.xyz;
-
-        let max_depth: u32 = 1u;
+        let max_depth: u32 = 5u;
         for (var depth: u32 = 0u; depth < max_depth; depth += 1u) {
             trace_ray(&ray);
             if ray.record.t >= t_far  {
@@ -183,10 +108,6 @@ fn gi(@builtin(global_invocation_id) id: vec3<u32>) {
                 color += throughput * direct_light;
                 throughput *= material.base_color.xyz;
 
-                // No NNE
-                // color += throughput * material.emissive.xyz;
-                // throughput *= material.base_color.xyz;
-
                 let p = max(max(throughput.r, throughput.g), throughput.b);
                 if rand_f(&rng_state) > p { 
                     break; 
@@ -206,7 +127,13 @@ fn gi(@builtin(global_invocation_id) id: vec3<u32>) {
         color_out += color * spp_inv;
     }
 
-    textureStore(pulse_output_texture, id.xy, vec4f(color_out, 1.0));
+    #ifdef ACCUMULATE
+        textureStore(gi_output, id.xy, vec4f(normalize(abs(pbr_input.world_normal.xyz)), 1.0));
+    #else
+        textureStore(gi_output, id.xy, vec4f(color_out, 1.0));
+    #endif
+        
+
 }
 
 // `p0`/`n0`/`base_color` are position/normal/color of point from where to sample
@@ -224,7 +151,7 @@ fn sample_direct_light(p0: vec3f, n0: vec3f, base_color: vec3f, rng_state: ptr<f
     let primitive = primitives[mesh_instance.triangle_offset + primitive_index];
 
     let pl_obj = sample_triangle_uniformly(e1, e2, primitive.p_first, primitive.p_second, primitive.p_third);
-    let pl = pulse::utilities::transform_position(mesh_instance.object_world, pl_obj);
+    let pl = pulse::utils::transform_position(mesh_instance.object_world, pl_obj);
 
     let to_light = pl - p0;
     var shadow_ray = Ray();
@@ -264,7 +191,7 @@ fn sample_direct_light(p0: vec3f, n0: vec3f, base_color: vec3f, rng_state: ptr<f
     // https://www.youtube.com/watch?v=FU1dbi827LY at 4:24
     let cos_theta_receiver = dot(shadow_ray.dir, n0);
     let cos_theta_emitter = dot(-shadow_ray.dir, nl);
-    let brdf = base_color * pulse::utilities::INV_PI;
+    let brdf = base_color * pulse::utils::INV_PI;
     let light_material = materials[mesh_instance.material_index];
     let direct_light = brdf * light_material.emissive.xyz * cos_theta_receiver * cos_theta_emitter / pdf / distance_sq(n0, nl);
     return max(direct_light, vec3f(0.0));

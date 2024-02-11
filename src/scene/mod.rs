@@ -1,6 +1,6 @@
 use crate::utilities::*;
 use bevy::{
-    asset::{load_internal_asset, LoadedFolder},
+    asset::load_internal_asset,
     diagnostic::{Diagnostic, DiagnosticId, Diagnostics, RegisterDiagnostic},
     prelude::*,
     render::{

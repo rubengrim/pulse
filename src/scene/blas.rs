@@ -97,7 +97,7 @@ pub fn subdivide(
         return;
     }
 
-    let (axis, split_position, split_cost) =
+    let (axis, split_position, _split_cost) =
         find_best_split_plane(&nodes[node_idx], prims, centroids, tri_indices);
 
     // let no_split_cost = calculate_node_cost(&nodes[node_idx]);
@@ -252,13 +252,13 @@ fn find_best_split_plane(
     (best_axis, best_position, best_cost)
 }
 
-fn calculate_node_cost(node: &PulseBLASNode) -> f32 {
+fn _calculate_node_cost(node: &PulseBLASNode) -> f32 {
     let e = node.aabb_max - node.aabb_min;
     let area = e.x * e.y + e.y * e.z + e.z * e.x;
     node.tri_count as f32 * area
 }
 
-fn evaluate_sah(
+fn _evaluate_sah(
     node: &PulseBLASNode,
     axis: usize,
     position: f32,

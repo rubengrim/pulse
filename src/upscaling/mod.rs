@@ -29,8 +29,8 @@ impl Plugin for PulseUpscalingPlugin {
         let render_app = app.sub_app_mut(RenderApp);
 
         render_app
-            .init_resource::<PulseUpscalingPipeline>()
-            .init_resource::<SpecializedRenderPipelines<PulseUpscalingPipeline>>();
+            .init_resource::<PulseUpscalingLayout>()
+            .init_resource::<SpecializedRenderPipelines<PulseUpscalingLayout>>();
 
         render_app.add_systems(
             Render,

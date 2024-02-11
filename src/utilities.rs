@@ -2,8 +2,8 @@ use bevy::{
     prelude::*,
     render::{
         render_resource::{
-            encase::internal::WriteInto, Buffer, BufferDescriptor, BufferUsages,
-            CommandEncoderDescriptor, ShaderSize, ShaderType, StorageBuffer, UniformBuffer,
+            encase::internal::WriteInto, BufferUsages, ShaderSize, ShaderType, StorageBuffer,
+            UniformBuffer,
         },
         renderer::{RenderDevice, RenderQueue},
     },

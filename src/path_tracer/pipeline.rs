@@ -53,17 +53,6 @@ impl FromWorld for PulsePathTracerPipeline {
                     },
                     count: None,
                 },
-                // Accumulation texture view
-                BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::StorageTexture {
-                        access: StorageTextureAccess::ReadWrite,
-                        format: PulseRenderTarget::TEXTURE_FORMAT,
-                        view_dimension: TextureViewDimension::D2,
-                    },
-                    count: None,
-                },
             ],
         });
 

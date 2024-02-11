@@ -1,13 +1,16 @@
-use crate::{create_render_target_bind_group, PulseRenderTarget};
+use crate::{
+    pulse::{PulseGIRenderTarget, PulseShadowRenderTarget},
+    upscaling::pipeline::PulseUpscalingLayout,
+    utilities::create_uniform_buffer,
+};
 use bevy::{
     ecs::query::QueryItem,
     prelude::*,
     render::{
-        camera::ExtractedCamera,
         render_graph::{NodeRunError, RenderGraphContext, ViewNode},
         render_resource::*,
-        renderer::{RenderContext, RenderDevice, RenderQueue},
-        view::{ViewTarget, ViewUniformOffset, ViewUniforms},
+        renderer::{RenderContext, RenderQueue},
+        view::ViewTarget,
     },
 };
 
@@ -21,7 +24,8 @@ impl PulseUpscalingNode {
 impl ViewNode for PulseUpscalingNode {
     type ViewQuery = (
         &'static ViewTarget,
-        &'static PulseRenderTarget,
+        &'static PulseGIRenderTarget,
+        &'static PulseShadowRenderTarget,
         &'static PulseUpscalingPipelineId,
     );
 
@@ -31,7 +35,7 @@ impl ViewNode for PulseUpscalingNode {
         &self,
         _graph: &mut RenderGraphContext,
         render_context: &mut RenderContext,
-        (view_target, pulse_render_target, pipeline_id): QueryItem<Self::ViewQuery>,
+        (view_target, gi_target, shadow_target, pipeline_id): QueryItem<Self::ViewQuery>,
         world: &World,
     ) -> Result<(), NodeRunError> {
         let pipeline_cache = world.resource::<PipelineCache>();
@@ -39,13 +43,50 @@ impl ViewNode for PulseUpscalingNode {
             return Ok(());
         };
 
-        let upscaling_pipeline = world.resource::<PulseUpscalingPipeline>();
         let render_queue = world.resource::<RenderQueue>();
-        let bind_group = create_render_target_bind_group(
-            pulse_render_target,
-            &upscaling_pipeline.render_target_layout,
-            &render_context.render_device(),
-            &render_queue,
+
+        let uniform = PulseUpscalingUniform {
+            width: gi_target.width,
+            height: gi_target.height,
+        };
+
+        let uniform_buffer = create_uniform_buffer(
+            uniform,
+            Some("pulse_upscaling_uniform"),
+            render_context.render_device(),
+            render_queue,
+        );
+
+        let layout = world.resource::<PulseUpscalingLayout>();
+        let bind_group = render_context.render_device().create_bind_group(
+            Some("pulse_upscaling_bind_group"),
+            &layout.render_target_layout,
+            &[
+                // Uniform
+                BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buffer.into_binding(),
+                },
+                // GI target view
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(&gi_target.texture.default_view),
+                },
+                // Shadow target view
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&shadow_target.texture.default_view),
+                },
+                // Sampler
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::Sampler(
+                        &render_context
+                            .render_device()
+                            .create_sampler(&SamplerDescriptor::default()),
+                    ),
+                },
+            ],
         );
 
         let mut render_pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
@@ -70,4 +111,10 @@ impl FromWorld for PulseUpscalingNode {
     fn from_world(_world: &mut World) -> Self {
         Self
     }
+}
+
+#[derive(ShaderType, Clone, Copy)]
+pub struct PulseUpscalingUniform {
+    width: u32,
+    height: u32,
 }

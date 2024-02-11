@@ -1,4 +1,4 @@
-#define_import_path pulse::utilities
+#define_import_path pulse::utils
 
 #import pulse::scene::{
     types::{

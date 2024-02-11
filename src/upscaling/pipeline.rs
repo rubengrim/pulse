@@ -1,5 +1,3 @@
-use crate::create_render_target_layout;
-
 use super::PULSE_UPSCALING_SHADER_HANDLE;
 use bevy::{
     prelude::*,
@@ -7,15 +5,59 @@ use bevy::{
 };
 
 #[derive(Resource)]
-pub struct PulseUpscalingPipeline {
+pub struct PulseUpscalingLayout {
     pub render_target_layout: BindGroupLayout,
 }
 
-impl FromWorld for PulseUpscalingPipeline {
+impl FromWorld for PulseUpscalingLayout {
     fn from_world(world: &mut World) -> Self {
         let device = world.resource::<RenderDevice>();
         Self {
-            render_target_layout: create_render_target_layout(device),
+            render_target_layout: device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("pulse_view_bind_group_layout"),
+                entries: &[
+                    // Render target uniforms
+                    BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::VERTEX_FRAGMENT,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // GI target view
+                    BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: ShaderStages::FRAGMENT,
+                        ty: BindingType::Texture {
+                            sample_type: TextureSampleType::Float { filterable: true },
+                            view_dimension: TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    // Shadow target view
+                    BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: ShaderStages::FRAGMENT,
+                        ty: BindingType::Texture {
+                            sample_type: TextureSampleType::Float { filterable: true },
+                            view_dimension: TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    // Sampler
+                    BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: ShaderStages::VERTEX_FRAGMENT,
+                        ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
+                        count: None,
+                    },
+                ],
+            }),
         }
     }
 }
@@ -23,7 +65,7 @@ impl FromWorld for PulseUpscalingPipeline {
 #[derive(Clone, Hash, PartialEq, Eq)]
 pub struct PulseUpscalingPipelineKey;
 
-impl SpecializedRenderPipeline for PulseUpscalingPipeline {
+impl SpecializedRenderPipeline for PulseUpscalingLayout {
     type Key = PulseUpscalingPipelineKey;
 
     fn specialize(&self, _key: Self::Key) -> RenderPipelineDescriptor {
@@ -72,8 +114,8 @@ pub struct PulseUpscalingPipelineId(pub CachedRenderPipelineId);
 pub fn prepare_upscaling_pipelines(
     views: Query<Entity, With<ExtractedCamera>>,
     mut commands: Commands,
-    mut upscaling_pipelines: ResMut<SpecializedRenderPipelines<PulseUpscalingPipeline>>,
-    upscaling_pipeline: Res<PulseUpscalingPipeline>,
+    mut upscaling_pipelines: ResMut<SpecializedRenderPipelines<PulseUpscalingLayout>>,
+    upscaling_pipeline: Res<PulseUpscalingLayout>,
     cache: Res<PipelineCache>,
 ) {
     for view_entity in &views {

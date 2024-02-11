@@ -1,27 +1,17 @@
-use std::sync::{
-    atomic::{AtomicU32, Ordering},
-    Arc,
-};
-
-use crate::{
-    path_tracer::PulsePathTracerNode, scene::PulseSceneBindGroupLayout,
-    upscaling::PulseUpscalingNode, PulsePathTracerAccumulationRenderTarget, PulseRenderTarget,
-    PULSE_PATH_TRACER_GRAPH,
-};
+use crate::{upscaling::PulseUpscalingNode, PulseRenderTarget};
 use bevy::{
     asset::load_internal_asset,
     core_pipeline::core_3d,
     prelude::*,
     render::{
-        camera::{CameraRenderGraph, ExtractedCamera},
+        camera::ExtractedCamera,
         extract_component::{ExtractComponent, ExtractComponentPlugin},
         render_graph::{RenderGraphApp, ViewNodeRunner},
         render_resource::*,
         renderer::RenderDevice,
-        texture::TextureCache,
+        texture::{CachedTexture, TextureCache},
         Render, RenderApp, RenderSet,
     },
-    transform::TransformSystem,
 };
 
 pub mod node;
@@ -39,7 +29,7 @@ impl Plugin for PulseRealtimePlugin {
     fn build(&self, app: &mut App) {
         load_internal_asset!(app, PULSE_GI_SHADER_HANDLE, "gi.wgsl", Shader::from_wgsl);
 
-        app.add_plugins(ExtractComponentPlugin::<PulseGI>::default());
+        app.add_plugins(ExtractComponentPlugin::<PulseSettings>::default());
     }
 
     fn finish(&self, app: &mut App) {
@@ -49,13 +39,13 @@ impl Plugin for PulseRealtimePlugin {
             .init_resource::<SpecializedComputePipelines<PulseGILayout>>()
             .add_systems(
                 Render,
-                (prepare_gi_render_targets, prepare_gi_pipelines).in_set(RenderSet::Prepare),
+                (prepare_render_targets, prepare_gi_pipelines).in_set(RenderSet::Prepare),
             );
 
         render_app
-            .add_render_graph_node::<ViewNodeRunner<PulseGINode>>(
+            .add_render_graph_node::<ViewNodeRunner<PulseNode>>(
                 core_3d::graph::NAME,
-                PulseGINode::NAME,
+                PulseNode::NAME,
             )
             .add_render_graph_node::<ViewNodeRunner<PulseUpscalingNode>>(
                 core_3d::graph::NAME,
@@ -65,7 +55,7 @@ impl Plugin for PulseRealtimePlugin {
                 core_3d::graph::NAME,
                 &[
                     core_3d::graph::node::END_MAIN_PASS,
-                    PulseGINode::NAME,
+                    PulseNode::NAME,
                     PulseUpscalingNode::NAME,
                     core_3d::graph::node::TONEMAPPING,
                 ],
@@ -73,27 +63,70 @@ impl Plugin for PulseRealtimePlugin {
     }
 }
 
-#[derive(Component, ExtractComponent, Clone)]
-pub struct PulseGI;
+#[derive(Component, ExtractComponent, Clone, Default)]
+pub struct PulseSettings {
+    // Will use camera target size if `None`
+    pub resolution: Option<UVec2>,
+    pub accumulate: bool,
+}
 
-// Detta är efterblivet views måste kunna ha flera render targets.
-pub fn prepare_gi_render_targets(
-    views: Query<(Entity, &ExtractedCamera)>,
+#[derive(Component)]
+pub struct PulseGIRenderTarget {
+    pub texture: CachedTexture,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Component)]
+pub struct PulseShadowRenderTarget {
+    pub texture: CachedTexture,
+    pub width: u32,
+    pub height: u32,
+}
+
+fn prepare_render_targets(
+    views: Query<(Entity, &ExtractedCamera, &PulseSettings)>,
     device: Res<RenderDevice>,
     mut texture_cache: ResMut<TextureCache>,
     mut commands: Commands,
 ) {
-    for (entity, camera) in &views {
-        if let Some(target_size) = camera.physical_target_size {
-            let render_target = PulseRenderTarget::new(
-                target_size.x,
-                target_size.y,
-                None,
-                &mut texture_cache,
-                &device,
-            );
+    let mut get_texture = |width: u32, height: u32, label: Option<&'static str>| {
+        texture_cache.get(
+            &device,
+            TextureDescriptor {
+                label,
+                size: Extent3d {
+                    width,
+                    height,
+                    ..default()
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format: PulseRenderTarget::TEXTURE_FORMAT,
+                usage: TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING,
+                view_formats: &[TextureFormat::Rgba32Float],
+            },
+        )
+    };
 
-            commands.entity(entity).insert(render_target);
-        }
+    for (entity, camera, pulse_settings) in &views {
+        let res = pulse_settings
+            .resolution
+            .unwrap_or_else(|| camera.physical_target_size.unwrap_or(UVec2::new(720, 480)));
+
+        let gi_target = PulseGIRenderTarget {
+            texture: get_texture(res.x, res.y, Some("pulse_gi_target_texture")),
+            width: res.x,
+            height: res.y,
+        };
+
+        let shadow_target = PulseShadowRenderTarget {
+            texture: get_texture(res.x, res.y, Some("pulse_shadow_target_texture")),
+            width: res.x,
+            height: res.y,
+        };
+
+        commands.entity(entity).insert((gi_target, shadow_target));
     }
 }

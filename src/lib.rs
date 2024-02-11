@@ -1,7 +1,6 @@
 use bevy::{
     prelude::*,
     render::{
-        render_graph::{RenderGraphApp, ViewNodeRunner},
         render_resource::*,
         renderer::{RenderDevice, RenderQueue},
         texture::{CachedTexture, TextureCache},
@@ -18,7 +17,6 @@ pub mod utilities;
 
 use diagnostics::*;
 use path_tracer::*;
-use pulse::*;
 use scene::*;
 use upscaling::*;
 use utilities::*;
@@ -35,7 +33,7 @@ impl Plugin for PulsePlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        let render_app = app.sub_app_mut(RenderApp);
+        let _render_app = app.sub_app_mut(RenderApp);
 
         // let required_features = WgpuFeatures::TIMESTAMP_QUERY;
         // match render_app.world.get_resource::<RenderDevice>() {
