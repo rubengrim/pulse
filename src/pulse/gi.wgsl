@@ -50,15 +50,13 @@ struct PulseUniform {
 
 @group(2) @binding(0) var gi_output: texture_storage_2d<rgba32float, read_write>;
 @group(2) @binding(1) var shadow_output: texture_storage_2d<rgba32float, read_write>;
-@group(2) @binding(2) var deferred_texture_sampler: sampler;
-@group(2) @binding(3) var<uniform> pulse_uniform: PulseUniform;
+@group(2) @binding(2) var<uniform> pulse_uniform: PulseUniform;
 
 
 @compute @workgroup_size(16, 16, 1)
 fn gi(@builtin(global_invocation_id) id: vec3<u32>) { 
     let pixel_index = id.x + id.y * u32(pulse_uniform.width);
     var rng_state = pixel_index * 5817321u;
-
 
     let pixel_uv = vec2f(id.xy) / vec2f(f32(pulse_uniform.width), f32(pulse_uniform.height));
     // + 0.5 to get to fragment center

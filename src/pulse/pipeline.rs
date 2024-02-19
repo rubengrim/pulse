@@ -1,7 +1,5 @@
-use std::num::NonZeroU32;
-
-use super::{PulseSettings, PULSE_GI_SHADER_HANDLE};
-use crate::{scene::PulseSceneBindGroupLayout, PulseRenderTarget};
+use super::{PulseCamera, PULSE_GI_SHADER_HANDLE};
+use crate::scene::PulseSceneBindGroupLayout;
 use bevy::{
     core_pipeline::{
         prepass::{DeferredPrepass, DepthPrepass, MotionVectorPrepass, NormalPrepass},
@@ -40,7 +38,7 @@ impl FromWorld for PulseGILayout {
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::ReadWrite,
-                        format: PulseRenderTarget::TEXTURE_FORMAT,
+                        format: TextureFormat::Rgba32Float,
                         view_dimension: TextureViewDimension::D2,
                     },
                     count: None,
@@ -51,21 +49,14 @@ impl FromWorld for PulseGILayout {
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::ReadWrite,
-                        format: PulseRenderTarget::TEXTURE_FORMAT,
+                        format: TextureFormat::Rgba32Float,
                         view_dimension: TextureViewDimension::D2,
                     },
                     count: None,
                 },
-                // Deferred texture sampler
-                BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
-                    count: None,
-                },
                 // Resolution uniform
                 BindGroupLayoutEntry {
-                    binding: 3,
+                    binding: 2,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Uniform,
@@ -88,28 +79,20 @@ impl FromWorld for PulseGILayout {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct PulsePipelineKey {
-    pub accumulate: bool,
-    mesh_key: MeshPipelineKey,
-}
-
 impl SpecializedComputePipeline for PulseGILayout {
-    type Key = PulsePipelineKey;
+    type Key = MeshPipelineKey;
 
     fn specialize(&self, key: Self::Key) -> ComputePipelineDescriptor {
         // NOTE: These shader defs aren't used by Pulse but are needed for various shader functions, eg. for unpacking the deferred texture.
         let mut shader_defs = Vec::new();
 
-        let mesh_key = key.mesh_key;
-
         // Let the shader code know that it's running in a deferred pipeline.
         shader_defs.push("DEFERRED_LIGHTING_PIPELINE".into());
 
-        if mesh_key.contains(MeshPipelineKey::TONEMAP_IN_SHADER) {
+        if key.contains(MeshPipelineKey::TONEMAP_IN_SHADER) {
             shader_defs.push("TONEMAP_IN_SHADER".into());
 
-            let method = mesh_key.intersection(MeshPipelineKey::TONEMAP_METHOD_RESERVED_BITS);
+            let method = key.intersection(MeshPipelineKey::TONEMAP_METHOD_RESERVED_BITS);
 
             if method == MeshPipelineKey::TONEMAP_METHOD_NONE {
                 shader_defs.push("TONEMAP_METHOD_NONE".into());
@@ -130,28 +113,28 @@ impl SpecializedComputePipeline for PulseGILayout {
             }
 
             // Debanding is tied to tonemapping in the shader, cannot run without it.
-            if mesh_key.contains(MeshPipelineKey::DEBAND_DITHER) {
+            if key.contains(MeshPipelineKey::DEBAND_DITHER) {
                 shader_defs.push("DEBAND_DITHER".into());
             }
         }
 
-        if mesh_key.contains(MeshPipelineKey::SCREEN_SPACE_AMBIENT_OCCLUSION) {
+        if key.contains(MeshPipelineKey::SCREEN_SPACE_AMBIENT_OCCLUSION) {
             shader_defs.push("SCREEN_SPACE_AMBIENT_OCCLUSION".into());
         }
 
-        if mesh_key.contains(MeshPipelineKey::ENVIRONMENT_MAP) {
+        if key.contains(MeshPipelineKey::ENVIRONMENT_MAP) {
             shader_defs.push("ENVIRONMENT_MAP".into());
         }
 
-        if mesh_key.contains(MeshPipelineKey::NORMAL_PREPASS) {
+        if key.contains(MeshPipelineKey::NORMAL_PREPASS) {
             shader_defs.push("NORMAL_PREPASS".into());
         }
 
-        if mesh_key.contains(MeshPipelineKey::DEPTH_PREPASS) {
+        if key.contains(MeshPipelineKey::DEPTH_PREPASS) {
             shader_defs.push("DEPTH_PREPASS".into());
         }
 
-        if mesh_key.contains(MeshPipelineKey::MOTION_VECTOR_PREPASS) {
+        if key.contains(MeshPipelineKey::MOTION_VECTOR_PREPASS) {
             shader_defs.push("MOTION_VECTOR_PREPASS".into());
         }
 
@@ -159,7 +142,7 @@ impl SpecializedComputePipeline for PulseGILayout {
         shader_defs.push("DEFERRED_PREPASS".into());
 
         let shadow_filter_method =
-            mesh_key.intersection(MeshPipelineKey::SHADOW_FILTER_METHOD_RESERVED_BITS);
+            key.intersection(MeshPipelineKey::SHADOW_FILTER_METHOD_RESERVED_BITS);
         if shadow_filter_method == MeshPipelineKey::SHADOW_FILTER_METHOD_HARDWARE_2X2 {
             shader_defs.push("SHADOW_FILTER_METHOD_HARDWARE_2X2".into());
         } else if shadow_filter_method == MeshPipelineKey::SHADOW_FILTER_METHOD_CASTANO_13 {
@@ -168,14 +151,10 @@ impl SpecializedComputePipeline for PulseGILayout {
             shader_defs.push("SHADOW_FILTER_METHOD_JIMENEZ_14".into());
         }
 
-        if key.accumulate {
-            shader_defs.push("ACCUMULATE".into());
-        }
-
         ComputePipelineDescriptor {
             label: Some("pulse_pipeline".into()),
             layout: vec![
-                self.mesh_pipeline.get_view_layout(mesh_key.into()).clone(),
+                self.mesh_pipeline.get_view_layout(key.into()).clone(),
                 self.scene_layout.clone(),
                 self.view_layout.clone(),
             ],
@@ -192,7 +171,7 @@ pub fn prepare_gi_pipelines(
         (
             Entity,
             &ExtractedView,
-            &PulseSettings,
+            &PulseCamera,
             Option<&Tonemapping>,
             Option<&DebandDither>,
             Option<&EnvironmentMapLight>,
@@ -215,7 +194,7 @@ pub fn prepare_gi_pipelines(
     for (
         entity,
         view,
-        pulse_settings,
+        pulse,
         tonemapping,
         dither,
         environment_map,
@@ -288,12 +267,7 @@ pub fn prepare_gi_pipelines(
             }
         }
 
-        let view_key = PulsePipelineKey {
-            accumulate: pulse_settings.accumulate,
-            mesh_key,
-        };
-
-        let id = pipelines.specialize(&cache, &layout, view_key);
+        let id = pipelines.specialize(&cache, &layout, mesh_key);
         commands.entity(entity).insert(PulseGIPipeline { id });
     }
 }

@@ -13,7 +13,7 @@ use bevy::{
 
 use super::{
     pipeline::{PulseGILayout, PulseGIPipeline},
-    PulseGIRenderTarget, PulseSettings, PulseShadowRenderTarget,
+    PulseCamera, PulseGIRenderTarget, PulseShadowRenderTarget,
 };
 
 pub struct PulseNode;
@@ -24,7 +24,7 @@ impl PulseNode {
 
 impl ViewNode for PulseNode {
     type ViewQuery = (
-        &'static PulseSettings,
+        &'static PulseCamera,
         &'static PulseGIRenderTarget,
         &'static PulseShadowRenderTarget,
         &'static PulseGIPipeline,
@@ -91,23 +91,9 @@ impl ViewNode for PulseNode {
                         &shadow_render_target.texture.default_view,
                     ),
                 },
-                // Sampler
-                BindGroupEntry {
-                    binding: 2,
-                    resource: BindingResource::Sampler(
-                        &render_context
-                            .render_device()
-                            .create_sampler(&SamplerDescriptor {
-                                // Deferred texture is packed, can't interpolate
-                                mag_filter: FilterMode::Nearest,
-                                min_filter: FilterMode::Nearest,
-                                ..default()
-                            }),
-                    ),
-                },
                 // Resolution uniform
                 BindGroupEntry {
-                    binding: 3,
+                    binding: 2,
                     resource: uniform_buffer.binding().unwrap(),
                 },
             ],

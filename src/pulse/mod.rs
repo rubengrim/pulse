@@ -1,4 +1,4 @@
-use crate::{upscaling::PulseUpscalingNode, PulseRenderTarget};
+use crate::upscaling::{PulseUpscalingNode, PulseUpscalingPlugin};
 use bevy::{
     asset::load_internal_asset,
     core_pipeline::core_3d,
@@ -29,7 +29,10 @@ impl Plugin for PulseRealtimePlugin {
     fn build(&self, app: &mut App) {
         load_internal_asset!(app, PULSE_GI_SHADER_HANDLE, "gi.wgsl", Shader::from_wgsl);
 
-        app.add_plugins(ExtractComponentPlugin::<PulseSettings>::default());
+        app.add_plugins((
+            ExtractComponentPlugin::<PulseCamera>::default(),
+            PulseUpscalingPlugin,
+        ));
     }
 
     fn finish(&self, app: &mut App) {
@@ -39,7 +42,7 @@ impl Plugin for PulseRealtimePlugin {
             .init_resource::<SpecializedComputePipelines<PulseGILayout>>()
             .add_systems(
                 Render,
-                (prepare_render_targets, prepare_gi_pipelines).in_set(RenderSet::Prepare),
+                (prepare_pulse_render_targets, prepare_gi_pipelines).in_set(RenderSet::Prepare),
             );
 
         render_app
@@ -64,10 +67,9 @@ impl Plugin for PulseRealtimePlugin {
 }
 
 #[derive(Component, ExtractComponent, Clone, Default)]
-pub struct PulseSettings {
+pub struct PulseCamera {
     // Will use camera target size if `None`
     pub resolution: Option<UVec2>,
-    pub accumulate: bool,
 }
 
 #[derive(Component)]
@@ -84,8 +86,8 @@ pub struct PulseShadowRenderTarget {
     pub height: u32,
 }
 
-fn prepare_render_targets(
-    views: Query<(Entity, &ExtractedCamera, &PulseSettings)>,
+fn prepare_pulse_render_targets(
+    views: Query<(Entity, &ExtractedCamera, &PulseCamera)>,
     device: Res<RenderDevice>,
     mut texture_cache: ResMut<TextureCache>,
     mut commands: Commands,
@@ -103,7 +105,7 @@ fn prepare_render_targets(
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: TextureDimension::D2,
-                format: PulseRenderTarget::TEXTURE_FORMAT,
+                format: TextureFormat::Rgba32Float,
                 usage: TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING,
                 view_formats: &[TextureFormat::Rgba32Float],
             },

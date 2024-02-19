@@ -496,6 +496,121 @@ fn sample_hemisphere_rejection(normal: vec3f, state: ptr<function, u32>) -> vec3
 // END: SAMPLING
 //--------------
 
+//-----------------------------
+// BEGIN: DIRECT LIGHT SAMPLING
+
+// `p0`/`n0`/`base_color` are position/normal/color of point from where to sample
+fn sample_direct_light(p0: vec3f, n0: vec3f, base_color: vec3f, rng_state: ptr<function, u32>) -> vec3f {
+    // let light_index = sample_light_emission_strength_cdf(rand_f(rng_state));
+    let light_index = rand_range_u(scene_uniform.light_count, rng_state);
+    let light_data_index = light_indices[light_index];
+    let mesh_instance = instances[light_data_index.mesh_instance_index];
+
+    // Uniformly sample a point on the surface of the chosen light.
+    let e0 = rand_f(rng_state);
+    let e1 = rand_f(rng_state);
+    let e2 = rand_f(rng_state);
+    let primitive_index = sample_light_triangle_area_cdf(e0, light_data_index.cdf_offset, mesh_instance.triangle_count);
+    let primitive = primitives[mesh_instance.triangle_offset + primitive_index];
+
+    let pl_obj = sample_triangle_uniformly(e1, e2, primitive.p_first, primitive.p_second, primitive.p_third);
+    let pl = pulse::utils::transform_position(mesh_instance.object_world, pl_obj);
+
+    let to_light = pl - p0;
+    var shadow_ray = Ray();
+    shadow_ray.origin = p0 + 0.001 * n0;
+    shadow_ray.dir = normalize(to_light);
+    shadow_ray.record = RayHitRecord(1e30, 0u, 0u, 0.0, 0.0);
+    trace_ray(&shadow_ray);
+
+    if shadow_ray.record.t < length(pl - shadow_ray.origin) - 0.005 {
+        return vec3f(0.0);
+    }
+    
+    // if trace_shadow_ray(&shadow_ray, length(to_light) - 0.0001) {
+    //     // Light source is occluded; no direct light contribution
+    //     return vec3f(0.0);
+    // }
+
+    // Calculate triangle normal. Could try to interpolate normals but this should be good enough.
+    let side_a = primitive.p_second - primitive.p_first;
+    let side_b = primitive.p_third - primitive.p_first;
+    var nl = normalize(cross(side_a, side_b));
+    if dot(nl, -shadow_ray.dir) < 0.0 {
+        nl = -nl;
+    }
+
+    var light_pdf: f32;
+    // if light_index == 0u {
+    //     light_pdf = light_emission_strength_cdf[light_index];
+    // } else {
+    //     light_pdf = light_emission_strength_cdf[light_index] - light_emission_strength_cdf[light_index - 1u];
+    // }
+    light_pdf = 1.0 / f32(scene_uniform.light_count);
+    var triangle_pdf = 1.0 / light_mesh_areas[light_index];
+    let pdf = light_pdf * triangle_pdf;
+
+    // Evaluate direct light contribution
+    // https://www.youtube.com/watch?v=FU1dbi827LY at 4:24
+    let cos_theta_receiver = dot(shadow_ray.dir, n0);
+    let cos_theta_emitter = dot(-shadow_ray.dir, nl);
+    let brdf = base_color * pulse::utils::INV_PI;
+    let light_material = materials[mesh_instance.material_index];
+    let direct_light = brdf * light_material.emissive.xyz * cos_theta_receiver * cos_theta_emitter / pdf / distance_sq(n0, nl);
+    return max(direct_light, vec3f(0.0));
+}
+
+// Find the index of the largest value <= `e` between in `light_emission_strength_cdf`.
+// Binary search
+fn sample_light_emission_strength_cdf(e: f32) -> u32 {
+    var l: i32 = 0;
+    var r: i32 = l + i32(scene_uniform.light_count) - 1;
+    while l <= r {
+        let mid = l + (r - l);
+
+        if light_emission_strength_cdf[mid] <= e {
+            l = mid + 1;
+        } else {
+            r = mid - 1;
+        }
+    }
+
+    return min(u32(l), scene_uniform.light_count - 1u);
+}
+
+// Find the index of the largest value <= `e` between `cdf_offset`and `cdf_offset` + `count` in `light_cdfs`.
+// Binary search
+fn sample_light_triangle_area_cdf(e: f32, cdf_offset: u32, count: u32) -> u32 {
+    var l: i32 = i32(cdf_offset);
+    var r: i32 = l + i32(count) - 1;
+    while l <= r {
+        let mid = l + (r - l);
+
+        if light_triangle_area_cdfs[mid] <= e {
+            l = mid + 1;
+        } else {
+            r = mid - 1;
+        }
+    }
+
+    return min(u32(l), cdf_offset + count - 1u) - cdf_offset;
+}
+
+// Parallelogram method
+// https://extremelearning.com.au/evenly-distributing-points-in-a-triangle/
+fn sample_triangle_uniformly(e0: f32, e1: f32, p0: vec3f, p1: vec3f, p2: vec3f) -> vec3f {
+    let a = p1 - p0;
+    let b = p2 - p0;
+    if e0 + e1 < 1.0 {
+        return p0 + (e0 * a) + (e1 * b);
+    } else {
+        return p0 + ((1.0 - e0) * a) + ((1.0 - e1) * b);
+    }
+}
+
+// END: DIRECT LIGHT SAMPLING
+//---------------------------
+
 //-----------------------
 // BEGIN: TRANSFORMATIONS
 
@@ -664,3 +779,5 @@ fn importance_sample_ggx_d(n: vec3f, wo: vec3f, material: Material, rng_state: p
 
 // END: GGX
 //---------
+
+

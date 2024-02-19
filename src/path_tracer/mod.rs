@@ -3,29 +3,30 @@ use std::sync::{
     Arc,
 };
 
-use crate::{
-    upscaling::PulseUpscalingNode, PulsePathTracerAccumulationRenderTarget, PulseRenderTarget,
-};
+use crate::upscaling::PulseUpscalingNode;
 use bevy::{
     asset::load_internal_asset,
+    core_pipeline::core_3d,
     prelude::*,
     render::{
-        camera::{CameraRenderGraph, ExtractedCamera},
+        camera::ExtractedCamera,
         extract_component::{ExtractComponent, ExtractComponentPlugin},
         render_graph::{RenderGraphApp, ViewNodeRunner},
         render_resource::*,
         renderer::RenderDevice,
-        texture::TextureCache,
+        texture::{CachedTexture, TextureCache},
         Render, RenderApp, RenderSet,
     },
     transform::TransformSystem,
 };
 
 pub mod node;
-pub use node::*;
-
 pub mod pipeline;
+pub mod pt_upscaling;
+
+pub use node::*;
 pub use pipeline::*;
+pub use pt_upscaling::*;
 
 pub const PULSE_PATH_TRACER_GRAPH: &str = "pulse_path_tracer_graph";
 
@@ -43,7 +44,10 @@ impl Plugin for PulsePathTracerPlugin {
             Shader::from_wgsl
         );
 
-        app.add_plugins(ExtractComponentPlugin::<PulsePathTracer>::default());
+        app.add_plugins((
+            ExtractComponentPlugin::<PulsePathTracerCamera>::default(),
+            PulsePathTracerUpscalingPlugin,
+        ));
 
         app.add_systems(
             PostUpdate,
@@ -55,110 +59,107 @@ impl Plugin for PulsePathTracerPlugin {
         let render_app = app.sub_app_mut(RenderApp);
 
         render_app
-            .add_render_sub_graph(PULSE_PATH_TRACER_GRAPH)
             .add_render_graph_node::<ViewNodeRunner<PulsePathTracerNode>>(
-                PULSE_PATH_TRACER_GRAPH,
+                core_3d::graph::NAME,
                 PulsePathTracerNode::NAME,
             )
-            .add_render_graph_node::<ViewNodeRunner<PulseUpscalingNode>>(
-                PULSE_PATH_TRACER_GRAPH,
-                PulseUpscalingNode::NAME,
+            .add_render_graph_node::<ViewNodeRunner<PulsePathTracerUpscalingNode>>(
+                core_3d::graph::NAME,
+                PulsePathTracerUpscalingNode::NAME,
+            )
+            .add_render_graph_edges(
+                core_3d::graph::NAME,
+                &[
+                    core_3d::graph::node::END_MAIN_PASS,
+                    PulsePathTracerNode::NAME,
+                    PulsePathTracerUpscalingNode::NAME,
+                    core_3d::graph::node::TONEMAPPING,
+                ],
             );
 
         render_app
-            .init_resource::<PulsePathTracerPipeline>()
-            .init_resource::<SpecializedComputePipelines<PulsePathTracerPipeline>>()
+            .init_resource::<PulsePathTracerLayout>()
+            .init_resource::<SpecializedComputePipelines<PulsePathTracerLayout>>()
             .add_systems(
                 Render,
-                (prepare_pipelines, prepare_render_targets).in_set(RenderSet::Prepare),
+                (
+                    prepare_path_tracer_pipelines,
+                    prepare_path_tracer_render_targets,
+                )
+                    .in_set(RenderSet::Prepare),
             );
     }
 }
 
 #[derive(ShaderType)]
 pub struct PulsePathTracerUniform {
-    pub previous_sample_count: u32,
+    pub width: u32,
+    pub height: u32,
+    pub accumulation_count: u32,
 }
 
 #[derive(Component, Default, Clone, ExtractComponent)]
-pub struct PulsePathTracer {
-    pub sample_count: Arc<AtomicU32>,
-    pub last_transform: GlobalTransform,
+pub struct PulsePathTracerCamera {
+    pub resolution: Option<UVec2>,
+    pub accumulation_count: Arc<AtomicU32>,
+    pub previous_transform: GlobalTransform,
 }
 
-fn reset_accumulation_on_movement(mut views: Query<(&GlobalTransform, &mut PulsePathTracer)>) {
+fn reset_accumulation_on_movement(
+    mut views: Query<(&GlobalTransform, &mut PulsePathTracerCamera)>,
+) {
     for (current_transform, mut path_tracer) in views.iter_mut() {
-        if *current_transform != path_tracer.last_transform {
-            path_tracer.sample_count.store(0, Ordering::SeqCst);
-            path_tracer.last_transform = *current_transform;
+        if *current_transform != path_tracer.previous_transform {
+            path_tracer.accumulation_count.store(0, Ordering::SeqCst);
+            path_tracer.previous_transform = *current_transform;
         }
     }
 }
 
-#[derive(Bundle)]
-pub struct PulsePathTracerCameraBundle {
-    pub path_tracer: PulsePathTracer,
-    pub camera: Camera,
-    pub camera_render_graph: CameraRenderGraph,
-    pub projection: Projection,
-    pub transform: Transform,
-    pub global_transform: GlobalTransform,
+#[derive(Component)]
+pub struct PulsePathTracerRenderTarget {
+    pub texture: CachedTexture,
+    pub width: u32,
+    pub height: u32,
 }
 
-impl Default for PulsePathTracerCameraBundle {
-    fn default() -> Self {
-        Self {
-            path_tracer: PulsePathTracer::default(),
-            camera: Camera {
-                hdr: true,
-                ..default()
-            },
-            camera_render_graph: CameraRenderGraph::new(PULSE_PATH_TRACER_GRAPH),
-            projection: Default::default(),
-            transform: Default::default(),
-            global_transform: Default::default(),
-        }
-    }
-}
-
-pub fn prepare_render_targets(
-    views: Query<(Entity, &ExtractedCamera)>,
+fn prepare_path_tracer_render_targets(
+    views: Query<(Entity, &ExtractedCamera, &PulsePathTracerCamera)>,
     device: Res<RenderDevice>,
     mut texture_cache: ResMut<TextureCache>,
     mut commands: Commands,
 ) {
-    for (entity, camera) in &views {
-        if let Some(target_size) = camera.physical_target_size {
-            let render_target = PulseRenderTarget::new(
-                target_size.x,
-                target_size.y,
-                None,
-                &mut texture_cache,
-                &device,
-            );
-
-            let acc_texture = texture_cache.get(
-                &device,
-                TextureDescriptor {
-                    label: None,
-                    size: Extent3d {
-                        width: target_size.x,
-                        height: target_size.y,
-                        ..default()
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: TextureDimension::D2,
-                    format: PulseRenderTarget::TEXTURE_FORMAT,
-                    usage: TextureUsages::STORAGE_BINDING,
-                    view_formats: &[PulseRenderTarget::TEXTURE_FORMAT],
+    let mut get_texture = |width: u32, height: u32, label: Option<&'static str>| {
+        texture_cache.get(
+            &device,
+            TextureDescriptor {
+                label,
+                size: Extent3d {
+                    width,
+                    height,
+                    ..default()
                 },
-            );
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format: TextureFormat::Rgba32Float,
+                usage: TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING,
+                view_formats: &[TextureFormat::Rgba32Float],
+            },
+        )
+    };
 
-            commands.entity(entity).insert((
-                render_target,
-                PulsePathTracerAccumulationRenderTarget(acc_texture),
-            ));
-        }
+    for (entity, camera, path_tracer) in &views {
+        let res = path_tracer
+            .resolution
+            .unwrap_or_else(|| camera.physical_target_size.unwrap_or(UVec2::new(720, 480)));
+
+        let target = PulsePathTracerRenderTarget {
+            texture: get_texture(res.x, res.y, Some("pulse_path_tracer_target_texture")),
+            width: res.x,
+            height: res.y,
+        };
+
+        commands.entity(entity).insert(target);
     }
 }

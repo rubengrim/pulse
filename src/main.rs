@@ -13,7 +13,8 @@ use bevy::{
 };
 use bevy_camera_operator::*;
 use pulse::{
-    pulse::{PulseRealtimePlugin, PulseSettings},
+    path_tracer::*,
+    pulse::{PulseCamera, PulseRealtimePlugin},
     PulsePlugin,
 };
 
@@ -42,8 +43,8 @@ fn main() {
                 ..default()
             }),
         PulsePlugin,
-        PulseRealtimePlugin,
-        // PulsePathTracerPlugin,
+        // PulseRealtimePlugin,
+        PulsePathTracerPlugin,
         CameraControllerPlugin,
         TemporalAntiAliasPlugin,
     ))
@@ -210,10 +211,6 @@ fn setup(
     // ));
 
     commands.spawn((
-        PulseSettings {
-            accumulate: false,
-            resolution: Some(UVec2::new(200, 200)),
-        },
         Camera3dBundle {
             transform: Transform::from_xyz(0.0, 0.0, 3.0),
             camera: Camera {
@@ -228,6 +225,10 @@ fn setup(
             yaw_update_speed: 0.1,
             ..default()
         }),
+        PulseCamera {
+            resolution: Some(UVec2::new(420, 350)),
+        },
+        PulsePathTracerCamera::default(),
         DepthPrepass,
         DeferredPrepass,
         // TemporalAntiAliasBundle::default(),
