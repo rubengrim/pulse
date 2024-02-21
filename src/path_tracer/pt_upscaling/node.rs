@@ -3,7 +3,7 @@ use bevy::{
     ecs::query::QueryItem,
     prelude::*,
     render::{
-        render_graph::{NodeRunError, RenderGraphContext, ViewNode},
+        render_graph::{NodeRunError, RenderGraphContext, RenderLabel, ViewNode},
         render_resource::*,
         renderer::{RenderContext, RenderQueue},
         view::ViewTarget,
@@ -12,10 +12,10 @@ use bevy::{
 
 use crate::path_tracer::pt_upscaling::*;
 
+#[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
+pub struct PulsePathTracerUpscalingNodeLabel;
+
 pub struct PulsePathTracerUpscalingNode;
-impl PulsePathTracerUpscalingNode {
-    pub const NAME: &'static str = "pulse_path_tracer_upscaling";
-}
 
 impl ViewNode for PulsePathTracerUpscalingNode {
     type ViewQuery = (
@@ -81,11 +81,10 @@ impl ViewNode for PulsePathTracerUpscalingNode {
 
         let mut render_pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
             label: Some("pulse_pt_upscaling_render_pass"),
-            color_attachments: &[Some(view_target.get_color_attachment(Operations {
-                load: LoadOp::Load,
-                store: true,
-            }))],
+            color_attachments: &[Some(view_target.get_color_attachment())],
             depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
         });
 
         // Draw output texture to fullscreen triangle

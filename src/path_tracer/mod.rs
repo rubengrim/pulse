@@ -3,7 +3,6 @@ use std::sync::{
     Arc,
 };
 
-use crate::upscaling::PulseUpscalingNode;
 use bevy::{
     asset::load_internal_asset,
     core_pipeline::core_3d,
@@ -60,21 +59,21 @@ impl Plugin for PulsePathTracerPlugin {
 
         render_app
             .add_render_graph_node::<ViewNodeRunner<PulsePathTracerNode>>(
-                core_3d::graph::NAME,
-                PulsePathTracerNode::NAME,
+                core_3d::graph::Core3d,
+                PulsePathTracerNodeLabel,
             )
             .add_render_graph_node::<ViewNodeRunner<PulsePathTracerUpscalingNode>>(
-                core_3d::graph::NAME,
-                PulsePathTracerUpscalingNode::NAME,
+                core_3d::graph::Core3d,
+                PulsePathTracerUpscalingNodeLabel,
             )
             .add_render_graph_edges(
-                core_3d::graph::NAME,
-                &[
-                    core_3d::graph::node::END_MAIN_PASS,
-                    PulsePathTracerNode::NAME,
-                    PulsePathTracerUpscalingNode::NAME,
-                    core_3d::graph::node::TONEMAPPING,
-                ],
+                core_3d::graph::Core3d,
+                (
+                    core_3d::graph::Node3d::EndMainPass,
+                    PulsePathTracerNodeLabel,
+                    PulsePathTracerUpscalingNodeLabel,
+                    core_3d::graph::Node3d::Tonemapping,
+                ),
             );
 
         render_app

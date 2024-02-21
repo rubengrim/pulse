@@ -13,9 +13,9 @@ impl FromWorld for PulsePathTracerUpscalingLayout {
     fn from_world(world: &mut World) -> Self {
         let device = world.resource::<RenderDevice>();
         Self {
-            render_target_layout: device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("pulse_pt_view_bind_group_layout"),
-                entries: &[
+            render_target_layout: device.create_bind_group_layout(
+                None,
+                &[
                     // Output size uniform
                     BindGroupLayoutEntry {
                         binding: 0,
@@ -46,7 +46,7 @@ impl FromWorld for PulsePathTracerUpscalingLayout {
                         count: None,
                     },
                 ],
-            }),
+            ),
         }
     }
 }

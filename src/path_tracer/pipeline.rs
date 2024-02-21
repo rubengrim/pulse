@@ -6,7 +6,8 @@ use bevy::{
         tonemapping::{DebandDither, Tonemapping},
     },
     pbr::{
-        MeshPipeline, MeshPipelineKey, ScreenSpaceAmbientOcclusionSettings, ShadowFilteringMethod,
+        irradiance_volume::IrradianceVolume, MeshPipeline, MeshPipelineKey, RenderViewLightProbes,
+        ScreenSpaceAmbientOcclusionSettings, ShadowFilteringMethod,
     },
     prelude::*,
     render::{
@@ -29,9 +30,9 @@ pub struct PulsePathTracerLayout {
 impl FromWorld for PulsePathTracerLayout {
     fn from_world(world: &mut World) -> Self {
         let device = world.resource::<RenderDevice>();
-        let view_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: None,
-            entries: &[
+        let view_layout = device.create_bind_group_layout(
+            None,
+            &[
                 // Output texture
                 BindGroupLayoutEntry {
                     binding: 0,
@@ -55,7 +56,7 @@ impl FromWorld for PulsePathTracerLayout {
                     count: None,
                 },
             ],
-        });
+        );
 
         let mesh_pipeline = world.resource::<MeshPipeline>().clone();
         let scene_layout = world.resource::<PulseSceneBindGroupLayout>().0.clone();
@@ -77,6 +78,9 @@ impl SpecializedComputePipeline for PulsePathTracerLayout {
 
         // Let the shader code know that it's running in a deferred pipeline.
         shader_defs.push("DEFERRED_LIGHTING_PIPELINE".into());
+
+        #[cfg(all(feature = "webgl", target_arch = "wasm32", not(feature = "webgpu")))]
+        shader_defs.push("WEBGL2".into());
 
         if key.contains(MeshPipelineKey::TONEMAP_IN_SHADER) {
             shader_defs.push("TONEMAP_IN_SHADER".into());
@@ -115,6 +119,10 @@ impl SpecializedComputePipeline for PulsePathTracerLayout {
             shader_defs.push("ENVIRONMENT_MAP".into());
         }
 
+        if key.contains(MeshPipelineKey::IRRADIANCE_VOLUME) {
+            shader_defs.push("IRRADIANCE_VOLUME".into());
+        }
+
         if key.contains(MeshPipelineKey::NORMAL_PREPASS) {
             shader_defs.push("NORMAL_PREPASS".into());
         }
@@ -140,6 +148,9 @@ impl SpecializedComputePipeline for PulsePathTracerLayout {
             shader_defs.push("SHADOW_FILTER_METHOD_JIMENEZ_14".into());
         }
 
+        #[cfg(all(feature = "webgl", target_arch = "wasm32", not(feature = "webgpu")))]
+        shader_defs.push("SIXTEEN_BYTE_ALIGNMENT".into());
+
         ComputePipelineDescriptor {
             label: Some("pulse_path_tracer_pipeline".into()),
             layout: vec![
@@ -163,14 +174,15 @@ pub fn prepare_path_tracer_pipelines(
             &PulsePathTracerCamera,
             Option<&Tonemapping>,
             Option<&DebandDither>,
-            Option<&EnvironmentMapLight>,
             Option<&ShadowFilteringMethod>,
-            Option<&ScreenSpaceAmbientOcclusionSettings>,
+            Has<ScreenSpaceAmbientOcclusionSettings>,
             (
                 Has<NormalPrepass>,
                 Has<DepthPrepass>,
                 Has<MotionVectorPrepass>,
             ),
+            Has<RenderViewLightProbes<EnvironmentMapLight>>,
+            Has<RenderViewLightProbes<IrradianceVolume>>,
         ),
         With<DeferredPrepass>,
     >,
@@ -186,33 +198,34 @@ pub fn prepare_path_tracer_pipelines(
         path_tracer,
         tonemapping,
         dither,
-        environment_map,
         shadow_filter_method,
         ssao,
         (normal_prepass, depth_prepass, motion_vector_prepass),
+        has_environment_maps,
+        has_irradiance_volumes,
     ) in &views
     {
-        let mut mesh_key = MeshPipelineKey::from_hdr(view.hdr);
+        let mut mesh_view_key = MeshPipelineKey::from_hdr(view.hdr);
 
         if normal_prepass {
-            mesh_key |= MeshPipelineKey::NORMAL_PREPASS;
+            mesh_view_key |= MeshPipelineKey::NORMAL_PREPASS;
         }
 
         if depth_prepass {
-            mesh_key |= MeshPipelineKey::DEPTH_PREPASS;
+            mesh_view_key |= MeshPipelineKey::DEPTH_PREPASS;
         }
 
         if motion_vector_prepass {
-            mesh_key |= MeshPipelineKey::MOTION_VECTOR_PREPASS;
+            mesh_view_key |= MeshPipelineKey::MOTION_VECTOR_PREPASS;
         }
 
         // Always true, since we're in the deferred lighting pipeline
-        mesh_key |= MeshPipelineKey::DEFERRED_PREPASS;
+        mesh_view_key |= MeshPipelineKey::DEFERRED_PREPASS;
 
         if !view.hdr {
             if let Some(tonemapping) = tonemapping {
-                mesh_key |= MeshPipelineKey::TONEMAP_IN_SHADER;
-                mesh_key |= match tonemapping {
+                mesh_view_key |= MeshPipelineKey::TONEMAP_IN_SHADER;
+                mesh_view_key |= match tonemapping {
                     Tonemapping::None => MeshPipelineKey::TONEMAP_METHOD_NONE,
                     Tonemapping::Reinhard => MeshPipelineKey::TONEMAP_METHOD_REINHARD,
                     Tonemapping::ReinhardLuminance => {
@@ -228,35 +241,38 @@ pub fn prepare_path_tracer_pipelines(
                 };
             }
             if let Some(DebandDither::Enabled) = dither {
-                mesh_key |= MeshPipelineKey::DEBAND_DITHER;
+                mesh_view_key |= MeshPipelineKey::DEBAND_DITHER;
             }
         }
 
-        if ssao.is_some() {
-            mesh_key |= MeshPipelineKey::SCREEN_SPACE_AMBIENT_OCCLUSION;
+        if ssao {
+            mesh_view_key |= MeshPipelineKey::SCREEN_SPACE_AMBIENT_OCCLUSION;
         }
 
-        let environment_map_loaded = match environment_map {
-            Some(environment_map) => environment_map.is_loaded(&images),
-            None => false,
-        };
-        if environment_map_loaded {
-            mesh_key |= MeshPipelineKey::ENVIRONMENT_MAP;
+        // We don't need to check to see whether the environment map is loaded
+        // because [`gather_light_probes`] already checked that for us before
+        // adding the [`RenderViewEnvironmentMaps`] component.
+        if has_environment_maps {
+            mesh_view_key |= MeshPipelineKey::ENVIRONMENT_MAP;
+        }
+
+        if has_irradiance_volumes {
+            mesh_view_key |= MeshPipelineKey::IRRADIANCE_VOLUME;
         }
 
         match shadow_filter_method.unwrap_or(&ShadowFilteringMethod::default()) {
             ShadowFilteringMethod::Hardware2x2 => {
-                mesh_key |= MeshPipelineKey::SHADOW_FILTER_METHOD_HARDWARE_2X2;
+                mesh_view_key |= MeshPipelineKey::SHADOW_FILTER_METHOD_HARDWARE_2X2;
             }
             ShadowFilteringMethod::Castano13 => {
-                mesh_key |= MeshPipelineKey::SHADOW_FILTER_METHOD_CASTANO_13;
+                mesh_view_key |= MeshPipelineKey::SHADOW_FILTER_METHOD_CASTANO_13;
             }
             ShadowFilteringMethod::Jimenez14 => {
-                mesh_key |= MeshPipelineKey::SHADOW_FILTER_METHOD_JIMENEZ_14;
+                mesh_view_key |= MeshPipelineKey::SHADOW_FILTER_METHOD_JIMENEZ_14;
             }
         }
 
-        let id = pipelines.specialize(&cache, &layout, mesh_key);
+        let id = pipelines.specialize(&cache, &layout, mesh_view_key);
         commands
             .entity(entity)
             .insert(PulsePathTracerPipeline { id });

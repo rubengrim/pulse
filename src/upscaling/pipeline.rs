@@ -13,9 +13,9 @@ impl FromWorld for PulseUpscalingLayout {
     fn from_world(world: &mut World) -> Self {
         let device = world.resource::<RenderDevice>();
         Self {
-            render_target_layout: device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("pulse_view_bind_group_layout"),
-                entries: &[
+            render_target_layout: device.create_bind_group_layout(
+                Some("pulse_view_bind_group_layout"),
+                &[
                     // Render target uniforms
                     BindGroupLayoutEntry {
                         binding: 0,
@@ -57,7 +57,7 @@ impl FromWorld for PulseUpscalingLayout {
                         count: None,
                     },
                 ],
-            }),
+            ),
         }
     }
 }

@@ -1,16 +1,14 @@
 use std::sync::atomic::Ordering;
 
 use crate::{
-    path_tracer::pipeline::PulsePathTracerPipeline,
-    scene::{PulseCanRender, PulseSceneBindGroup},
-    utilities::*,
+    path_tracer::pipeline::PulsePathTracerPipeline, scene::PulseSceneBindGroup, utilities::*,
 };
 use bevy::{
     ecs::query::QueryItem,
     pbr::{MeshViewBindGroup, ViewFogUniformOffset, ViewLightsUniformOffset},
     prelude::*,
     render::{
-        render_graph::{NodeRunError, RenderGraphContext, ViewNode},
+        render_graph::{NodeRunError, RenderGraphContext, RenderLabel, ViewNode},
         render_resource::*,
         renderer::{RenderContext, RenderDevice, RenderQueue},
         view::ViewUniformOffset,
@@ -22,11 +20,10 @@ use super::{
     PulsePathTracerUniform,
 };
 
-pub struct PulsePathTracerNode;
+#[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
+pub struct PulsePathTracerNodeLabel;
 
-impl PulsePathTracerNode {
-    pub const NAME: &'static str = "pulse_path_tracer_node";
-}
+pub struct PulsePathTracerNode;
 
 impl ViewNode for PulsePathTracerNode {
     type ViewQuery = (
@@ -56,10 +53,6 @@ impl ViewNode for PulsePathTracerNode {
         ): QueryItem<Self::ViewQuery>,
         world: &World,
     ) -> Result<(), NodeRunError> {
-        // if !world.resource::<PulseCanRender>().0 {
-        //     return Ok(());
-        // }
-
         let layout = world.resource::<PulsePathTracerLayout>();
         let pipeline_cache = world.resource::<PipelineCache>();
 
@@ -106,6 +99,7 @@ impl ViewNode for PulsePathTracerNode {
                 .command_encoder()
                 .begin_compute_pass(&ComputePassDescriptor {
                     label: Some("pulse_path_tracer_pass"),
+                    timestamp_writes: None,
                 });
 
         compute_pass.set_bind_group(

@@ -1,4 +1,4 @@
-use crate::upscaling::{PulseUpscalingNode, PulseUpscalingPlugin};
+use crate::upscaling::{PulseUpscalingLabel, PulseUpscalingNode, PulseUpscalingPlugin};
 use bevy::{
     asset::load_internal_asset,
     core_pipeline::core_3d,
@@ -47,21 +47,21 @@ impl Plugin for PulseRealtimePlugin {
 
         render_app
             .add_render_graph_node::<ViewNodeRunner<PulseNode>>(
-                core_3d::graph::NAME,
-                PulseNode::NAME,
+                core_3d::graph::Core3d,
+                PulseNodeLabel,
             )
             .add_render_graph_node::<ViewNodeRunner<PulseUpscalingNode>>(
-                core_3d::graph::NAME,
-                PulseUpscalingNode::NAME,
+                core_3d::graph::Core3d,
+                PulseUpscalingLabel,
             )
             .add_render_graph_edges(
-                core_3d::graph::NAME,
-                &[
-                    core_3d::graph::node::END_MAIN_PASS,
-                    PulseNode::NAME,
-                    PulseUpscalingNode::NAME,
-                    core_3d::graph::node::TONEMAPPING,
-                ],
+                core_3d::graph::Core3d,
+                (
+                    core_3d::graph::Node3d::EndMainPass,
+                    PulseNodeLabel,
+                    PulseUpscalingLabel,
+                    core_3d::graph::Node3d::Tonemapping,
+                ),
             );
     }
 }

@@ -4,7 +4,7 @@ use bevy::{
     pbr::{MeshViewBindGroup, ViewFogUniformOffset, ViewLightsUniformOffset},
     prelude::*,
     render::{
-        render_graph::{NodeRunError, RenderGraphContext, ViewNode},
+        render_graph::{NodeRunError, RenderGraphContext, RenderLabel, ViewNode},
         render_resource::*,
         renderer::{RenderContext, RenderQueue},
         view::ViewUniformOffset,
@@ -16,11 +16,10 @@ use super::{
     PulseCamera, PulseGIRenderTarget, PulseShadowRenderTarget,
 };
 
-pub struct PulseNode;
+#[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
+pub struct PulseNodeLabel;
 
-impl PulseNode {
-    pub const NAME: &'static str = "pulse_gi_node";
-}
+pub struct PulseNode;
 
 impl ViewNode for PulseNode {
     type ViewQuery = (
@@ -104,6 +103,7 @@ impl ViewNode for PulseNode {
                 .command_encoder()
                 .begin_compute_pass(&ComputePassDescriptor {
                     label: Some("pulse_pass"),
+                    timestamp_writes: None,
                 });
 
         compute_pass.set_bind_group(

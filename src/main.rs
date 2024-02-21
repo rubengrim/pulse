@@ -24,6 +24,9 @@ pub enum RenderingEngine {
     PulseRealtime,
 }
 
+#[derive(Resource)]
+struct HEHE;
+
 pub const RENDERING_ENGINE: RenderingEngine = RenderingEngine::PulseRealtime;
 
 fn main() {

@@ -1,7 +1,7 @@
 use crate::utilities::*;
 use bevy::{
     asset::load_internal_asset,
-    diagnostic::{Diagnostic, DiagnosticId, Diagnostics, RegisterDiagnostic},
+    diagnostic::Diagnostics,
     prelude::*,
     render::{
         extract_resource::{ExtractResource, ExtractResourcePlugin},
@@ -13,7 +13,7 @@ use bevy::{
     },
     utils::HashMap,
 };
-use std::time::Instant;
+// use std::time::Instant;
 
 pub mod blas;
 use blas::*;
@@ -29,11 +29,11 @@ pub const PULSE_SCENE_TYPES_SHADER_HANDLE: Handle<Shader> =
 pub const PULSE_UTILITIES_SHADER_HANDLE: Handle<Shader> =
     Handle::weak_from_u128(209309857616510645283619893241511474897);
 
-pub const TLAS_BUILD_TIME: DiagnosticId =
-    DiagnosticId::from_u128(178146834822086073791974408528866909483);
+// pub const TLAS_BUILD_TIME: DiagnosticId =
+//     DiagnosticId::from_u128(178146834822086073791974408528866909483);
 
-pub const INSTANCE_PREPARE_TIME: DiagnosticId =
-    DiagnosticId::from_u128(260990246982904911454274057946957245061);
+// pub const INSTANCE_PREPARE_TIME: DiagnosticId =
+//     DiagnosticId::from_u128(260990246982904911454274057946957245061);
 
 pub struct PulseScenePlugin;
 
@@ -93,17 +93,17 @@ impl Plugin for PulseScenePlugin {
                     .in_set(RenderSet::Prepare),
             );
 
-        render_app
-            .register_diagnostic(
-                Diagnostic::new(TLAS_BUILD_TIME, "tlas_build_time", 20)
-                    .with_suffix("ms")
-                    .with_smoothing_factor(1.0),
-            )
-            .register_diagnostic(
-                Diagnostic::new(INSTANCE_PREPARE_TIME, "instance_prepare_time", 20)
-                    .with_suffix("ms")
-                    .with_smoothing_factor(1.0),
-            );
+        // render_app
+        //     .register_diagnostic(
+        //         Diagnostic::new(TLAS_BUILD_TIME, "tlas_build_time", 20)
+        //             .with_suffix("ms")
+        //             .with_smoothing_factor(1.0),
+        //     )
+        //     .register_diagnostic(
+        //         Diagnostic::new(INSTANCE_PREPARE_TIME, "instance_prepare_time", 20)
+        //             .with_suffix("ms")
+        //             .with_smoothing_factor(1.0),
+        //     );
 
         render_app
             .init_resource::<ExtractedMeshAssets>()
@@ -222,13 +222,13 @@ fn extract_material_assets(
         match event {
             AssetEvent::Added { id } | AssetEvent::Modified { id } => {
                 if let Some(material) = material_assets.get(*id) {
-                    // info!("Extracted material with id {:?}", id);
                     new_or_modified.push((id.clone(), material.clone()));
                 }
             }
             AssetEvent::Removed { id } => {
                 removed.push(id.clone());
             }
+            AssetEvent::Unused { .. } => {}
             AssetEvent::LoadedWithDependencies { .. } => {}
         }
     }
@@ -255,8 +255,8 @@ fn prepare_extracted_material_assets(
 ) {
     for (id, material) in extracted.new_or_modified.iter() {
         let pulse_material = PulseMaterial {
-            base_color: material.base_color.into(),
-            emissive: material.emissive.into(),
+            base_color: material.base_color.rgba_to_vec4(),
+            emissive: material.emissive.rgba_to_vec4(),
             perceptual_roughness: material.perceptual_roughness,
             reflectance: material.reflectance,
             metallic: material.metallic,
@@ -326,6 +326,7 @@ fn extract_mesh_assets(
             AssetEvent::Removed { id } => {
                 removed.push(id.clone());
             }
+            AssetEvent::Unused { .. } => {}
             AssetEvent::LoadedWithDependencies { .. } => {}
         }
     }
@@ -566,9 +567,9 @@ fn prepare_mesh_instances(
     material_indices: Res<PulseMaterialIndices>,
     mut mesh_instances: ResMut<PulseMeshInstances>,
     mut tlas: ResMut<PulseSceneTLAS>,
-    mut diagnostics: Diagnostics,
+    // mut diagnostics: Diagnostics,
 ) {
-    let instance_prepare_start_time = Instant::now();
+    // let instance_prepare_start_time = Instant::now();
 
     mesh_instances.0 = vec![];
     let mut instance_primitives: Vec<PulsePrimitiveMeshInstance> = vec![]; // Used for TLAS creation.
@@ -684,15 +685,15 @@ fn prepare_mesh_instances(
     light_data.light_mesh_areas = light_mesh_areas;
     light_data.light_data_indices = light_data_indices;
 
-    diagnostics.add_measurement(INSTANCE_PREPARE_TIME, || {
-        instance_prepare_start_time.elapsed().as_secs_f64() * 1000.0
-    });
+    // diagnostics.add_measurement(INSTANCE_PREPARE_TIME, || {
+    //     instance_prepare_start_time.elapsed().as_secs_f64() * 1000.0
+    // });
 
-    let tlas_time_begin = Instant::now();
+    // let tlas_time_begin = Instant::now();
     tlas.0 = build_tlas(&instance_primitives);
-    diagnostics.add_measurement(TLAS_BUILD_TIME, || {
-        tlas_time_begin.elapsed().as_secs_f64() * 1000.0
-    });
+    // diagnostics.add_measurement(TLAS_BUILD_TIME, || {
+    //     tlas_time_begin.elapsed().as_secs_f64() * 1000.0
+    // });
 }
 
 // Returns (cdf, total area)
@@ -746,9 +747,9 @@ pub struct PulseSceneBindGroupLayout(pub BindGroupLayout);
 impl FromWorld for PulseSceneBindGroupLayout {
     fn from_world(world: &mut World) -> Self {
         let device = world.resource::<RenderDevice>();
-        Self(device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("pulse_scene_bind_group_layout"),
-            entries: &[
+        Self(device.create_bind_group_layout(
+            Some("pulse_scene_bind_group_layout"),
+            &[
                 // Uniform
                 BindGroupLayoutEntry {
                     binding: 0,
@@ -905,7 +906,7 @@ impl FromWorld for PulseSceneBindGroupLayout {
                     count: None,
                 },
             ],
-        }))
+        ))
     }
 }
 

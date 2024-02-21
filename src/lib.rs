@@ -1,6 +1,6 @@
 use bevy::{prelude::*, render::RenderApp};
 
-pub mod diagnostics;
+// pub mod diagnostics;
 pub mod path_tracer;
 pub mod pulse;
 pub mod scene;
