@@ -57,17 +57,13 @@ impl ViewNode for PulsePathTracerNode {
             return Ok(());
         };
 
-        let acc_count = path_tracer
-            .accumulation_count
-            .fetch_add(1, Ordering::SeqCst);
-
         let device = world.resource::<RenderDevice>();
         let queue = world.resource::<RenderQueue>();
         let path_tracer_uniform = create_uniform_buffer(
             PulsePathTracerUniform {
                 width: render_target.width,
                 height: render_target.height,
-                accumulation_count: acc_count,
+                accumulation_count: path_tracer.accumulation_count,
             },
             Some("pulse_path_tracer_uniform_buffer"),
             device,

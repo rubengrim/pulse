@@ -100,7 +100,7 @@ pub struct PulsePathTracerUniform {
 #[derive(Component, Default, Clone, ExtractComponent)]
 pub struct PulsePathTracerCamera {
     pub resolution: Option<UVec2>,
-    pub accumulation_count: Arc<AtomicU32>,
+    pub accumulation_count: u32,
     pub previous_transform: GlobalTransform,
 }
 
@@ -109,9 +109,11 @@ fn reset_accumulation_on_movement(
 ) {
     for (current_transform, mut path_tracer) in views.iter_mut() {
         if *current_transform != path_tracer.previous_transform {
-            path_tracer.accumulation_count.store(0, Ordering::SeqCst);
-            path_tracer.previous_transform = *current_transform;
+            path_tracer.accumulation_count = 0;
+        } else {
+            path_tracer.accumulation_count += 1;
         }
+        path_tracer.previous_transform = *current_transform;
     }
 }
 

@@ -268,12 +268,6 @@ fn path_trace(@builtin(global_invocation_id) id: vec3<u32>) {
     let weight = 1.0 / (f32(path_tracer_uniform.accumulation_count) + 1.0);
     var new_color = vec4f(old_color * (1.0 - weight) + color * weight, 1.0);
 
-    // if path_tracer_uniform.accumulation_count == 0u {
-    //     new_color = vec4f(1.0);
-    // } else {
-    //     new_color = vec4f(0.0, 0.0, 0.0, 1.0);
-    // }
-
     textureStore(output_texture, id.xy, new_color);
 }
 
