@@ -849,21 +849,9 @@ impl FromWorld for PulseSceneBindGroupLayout {
                     },
                     count: None,
                 },
-                // Blue noise textures
-                BindGroupLayoutEntry {
-                    binding: 9,
-                    visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Texture {
-                        sample_type: TextureSampleType::Float { filterable: true },
-                        view_dimension: TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    // count: NonZeroU32::new(64),
-                    count: None,
-                },
                 // Light emission strength CDF
                 BindGroupLayoutEntry {
-                    binding: 10,
+                    binding: 9,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Storage { read_only: true },
@@ -874,7 +862,7 @@ impl FromWorld for PulseSceneBindGroupLayout {
                 },
                 // Light triangle area CDFs
                 BindGroupLayoutEntry {
-                    binding: 11,
+                    binding: 10,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Storage { read_only: true },
@@ -885,7 +873,7 @@ impl FromWorld for PulseSceneBindGroupLayout {
                 },
                 // Light mesh areas
                 BindGroupLayoutEntry {
-                    binding: 12,
+                    binding: 11,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Storage { read_only: true },
@@ -896,7 +884,7 @@ impl FromWorld for PulseSceneBindGroupLayout {
                 },
                 // Light indices
                 BindGroupLayoutEntry {
-                    binding: 13,
+                    binding: 12,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Storage { read_only: true },
@@ -930,7 +918,6 @@ fn queue_scene_bind_group(
     layout: Res<PulseSceneBindGroupLayout>,
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
-    blue_noise_texture: Res<BlueNoiseTexture>,
     can_render: Res<PulseCanRender>,
 ) {
     if !can_render.0 {
@@ -1084,22 +1071,18 @@ fn queue_scene_bind_group(
             },
             BindGroupEntry {
                 binding: 9,
-                resource: BindingResource::TextureView(&blue_noise_texture.0.as_ref().unwrap()),
-            },
-            BindGroupEntry {
-                binding: 10,
                 resource: light_emission_strength_cdf_buffer.binding().unwrap(),
             },
             BindGroupEntry {
-                binding: 11,
+                binding: 10,
                 resource: light_triangle_area_cdf_buffer.binding().unwrap(),
             },
             BindGroupEntry {
-                binding: 12,
+                binding: 11,
                 resource: light_mesh_area_buffer.binding().unwrap(),
             },
             BindGroupEntry {
-                binding: 13,
+                binding: 12,
                 resource: light_index_buffer.binding().unwrap(),
             },
         ],

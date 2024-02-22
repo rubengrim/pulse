@@ -6,12 +6,15 @@ use bevy::{
         tonemapping::{DebandDither, Tonemapping},
     },
     pbr::{
-        irradiance_volume::IrradianceVolume, MeshPipeline, MeshPipelineKey, RenderViewLightProbes,
+        irradiance_volume::IrradianceVolume, MeshPipelineKey, RenderViewLightProbes,
         ScreenSpaceAmbientOcclusionSettings, ShadowFilteringMethod,
     },
     prelude::*,
     render::{
-        render_asset::RenderAssets, render_resource::*, renderer::RenderDevice, view::ExtractedView,
+        render_asset::RenderAssets,
+        render_resource::*,
+        renderer::RenderDevice,
+        view::{ExtractedView, ViewUniform},
     },
 };
 
@@ -22,7 +25,6 @@ pub struct PulsePathTracerPipeline {
 
 #[derive(Resource)]
 pub struct PulsePathTracerLayout {
-    pub mesh_pipeline: MeshPipeline,
     pub scene_layout: BindGroupLayout,
     pub view_layout: BindGroupLayout,
 }
@@ -33,9 +35,42 @@ impl FromWorld for PulsePathTracerLayout {
         let view_layout = device.create_bind_group_layout(
             None,
             &[
-                // Output texture
+                // View
                 BindGroupLayoutEntry {
                     binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: Some(ViewUniform::min_size()),
+                    },
+                    count: None,
+                },
+                // Deferred prepass texture
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Texture {
+                        sample_type: TextureSampleType::Uint,
+                        view_dimension: TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                // Depth prepass texture
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Texture {
+                        sample_type: TextureSampleType::Depth,
+                        view_dimension: TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                // Output texture
+                BindGroupLayoutEntry {
+                    binding: 3,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::ReadWrite,
@@ -46,7 +81,7 @@ impl FromWorld for PulsePathTracerLayout {
                 },
                 // Path tracer uniform
                 BindGroupLayoutEntry {
-                    binding: 1,
+                    binding: 4,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Uniform,
@@ -58,11 +93,9 @@ impl FromWorld for PulsePathTracerLayout {
             ],
         );
 
-        let mesh_pipeline = world.resource::<MeshPipeline>().clone();
         let scene_layout = world.resource::<PulseSceneBindGroupLayout>().0.clone();
 
         Self {
-            mesh_pipeline,
             scene_layout,
             view_layout,
         }
@@ -153,11 +186,7 @@ impl SpecializedComputePipeline for PulsePathTracerLayout {
 
         ComputePipelineDescriptor {
             label: Some("pulse_path_tracer_pipeline".into()),
-            layout: vec![
-                self.mesh_pipeline.get_view_layout(key.into()).clone(),
-                self.scene_layout.clone(),
-                self.view_layout.clone(),
-            ],
+            layout: vec![self.scene_layout.clone(), self.view_layout.clone()],
             push_constant_ranges: vec![],
             shader: PULSE_PATH_TRACER_SHADER_HANDLE,
             shader_defs,

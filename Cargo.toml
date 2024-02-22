@@ -7,9 +7,10 @@ edition = "2021"
 opt-level = 2
 
 [dependencies]
-bevy = { git = "https://github.com/rubengrim/bevy", branch = "pulse", features = ["dynamic_linking"] }
+# bevy = { git = "https://github.com/rubengrim/bevy", branch = "pulse", features = ["dynamic_linking"] }
 # bevy = { git = "https://github.com/rubengrim/bevy", branch = "pulse" }
+bevy = { version = "0.13.0", features = ["dynamic_linking"] }
 bevy_camera_operator = { git = "ssh://github.com/rubengrim/bevy_camera_operator.git" }
-bevy_egui = { path = "/home/ruben/dev/bevy/bevy_egui-0.24.0" }
+# bevy_egui = { path = "/home/ruben/dev/bevy/bevy_egui-0.24.0" }
 bytemuck = "1.14.0"
 rand = "0.8.5"

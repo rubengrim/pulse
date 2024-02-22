@@ -1,7 +1,5 @@
 #define_import_path pulse::scene::types
 
-// NOTE: naga doesn't allow imported types/names to end with a number. 
-
 struct SceneUniform {
     instance_count: u32,
     light_count: u32,

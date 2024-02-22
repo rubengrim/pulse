@@ -22,7 +22,10 @@
         instance_indices,
         instances,
         materials,
-        blue_noise_texture,
+        light_triangle_area_cdfs,
+        light_indices,
+        light_mesh_areas,
+        light_emission_strength_cdf,
     }
 }
 
@@ -60,12 +63,6 @@ fn are_close(a: f32, b: f32, threshold: f32) -> bool {
 
 //--------------------------------
 // BEGIN: RANDOM NUMBER GENERATION
-
-// https://developer.nvidia.com/blog/rendering-in-real-time-with-spatiotemporal-blue-noise-textures-part-2/
-fn next_bn_sample(rng_state: ptr<function, u32>, bn_texture_offset: vec2u, pixel_id: vec2u) -> f32 {
-    let texture_coord = bn_texture_offset + ((pixel_id + vec2u(rand_f_pair(rng_state) * 8.0) * 8u) % 64u);
-    return textureLoad(blue_noise_texture, texture_coord, 0).x;
-}
 
 fn rand_u(state: ptr<function, u32>) -> u32 {
     // PCG hash
@@ -514,7 +511,7 @@ fn sample_direct_light(p0: vec3f, n0: vec3f, base_color: vec3f, rng_state: ptr<f
     let primitive = primitives[mesh_instance.triangle_offset + primitive_index];
 
     let pl_obj = sample_triangle_uniformly(e1, e2, primitive.p_first, primitive.p_second, primitive.p_third);
-    let pl = pulse::utils::transform_position(mesh_instance.object_world, pl_obj);
+    let pl = transform_position(mesh_instance.object_world, pl_obj);
 
     let to_light = pl - p0;
     var shadow_ray = Ray();
@@ -554,7 +551,7 @@ fn sample_direct_light(p0: vec3f, n0: vec3f, base_color: vec3f, rng_state: ptr<f
     // https://www.youtube.com/watch?v=FU1dbi827LY at 4:24
     let cos_theta_receiver = dot(shadow_ray.dir, n0);
     let cos_theta_emitter = dot(-shadow_ray.dir, nl);
-    let brdf = base_color * pulse::utils::INV_PI;
+    let brdf = base_color * INV_PI;
     let light_material = materials[mesh_instance.material_index];
     let direct_light = brdf * light_material.emissive.xyz * cos_theta_receiver * cos_theta_emitter / pdf / distance_sq(n0, nl);
     return max(direct_light, vec3f(0.0));

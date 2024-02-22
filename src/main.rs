@@ -2,14 +2,18 @@ use std::f32::consts::PI;
 
 use bevy::{
     core_pipeline::{
-        experimental::taa::TemporalAntiAliasPlugin,
-        prepass::{DeferredPrepass, DepthPrepass},
+        experimental::taa::{
+            TemporalAntiAliasBundle, TemporalAntiAliasPlugin, TemporalAntiAliasSettings,
+        },
+        prepass::{DeferredPrepass, DepthPrepass, MotionVectorPrepass, NormalPrepass},
         tonemapping::Tonemapping,
     },
     pbr::{
         DefaultOpaqueRendererMethod, DirectionalLightShadowMap, OpaqueRendererMethod, PbrPlugin,
     },
     prelude::*,
+    render::camera::TemporalJitter,
+    window::WindowResolution,
 };
 use bevy_camera_operator::*;
 use pulse::{
@@ -228,12 +232,34 @@ fn setup(
             yaw_update_speed: 0.1,
             ..default()
         }),
-        PulseCamera {
-            resolution: Some(UVec2::new(420, 350)),
+        PulsePathTracerCamera {
+            // resolution: Some(UVec2::new(720, 480)),
+            ..default()
         },
-        PulsePathTracerCamera::default(),
         DepthPrepass,
+        // MotionVectorPrepass,
+        // TemporalJitter::default(),
         DeferredPrepass,
         // TemporalAntiAliasBundle::default(),
+        // TemporalAntiAliasSettings::default(),
     ));
+
+    // commands.spawn((
+    //     Camera3dBundle {
+    //         transform: Transform::from_xyz(0.0, 0.0, 3.0),
+    //         camera: Camera {
+    //             hdr: true,
+    //             ..default()
+    //         },
+    //         tonemapping: Tonemapping::None,
+    //         ..default()
+    //     },
+    //     DepthPrepass,
+    //     // MotionVectorPrepass,
+    //     // NormalPrepass,
+    //     // TemporalJitter::default(),
+    //     DeferredPrepass,
+    //     // TemporalAntiAliasBundle::default(),
+    //     // TemporalAntiAliasSettings::default(),
+    // ));
 }
