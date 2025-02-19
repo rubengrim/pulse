@@ -557,6 +557,103 @@ fn sample_direct_light(p0: vec3f, n0: vec3f, base_color: vec3f, rng_state: ptr<f
     return max(direct_light, vec3f(0.0));
 }
 
+// p0/n0/material are position/normal/material of point from where to sample
+// wo is the view direction from the sample point, ie the output direction of the light via the sample point
+fn sample_direct_light_ggx(p0: vec3f, n0: vec3f, material: Material, wo: vec3f, rng_state: ptr<function, u32>) -> vec3f {
+    // let light_index = sample_light_emission_strength_cdf(rand_f(rng_state));
+    let light_index = rand_range_u(scene_uniform.light_count, rng_state);
+    let light_data_index = light_indices[light_index];
+    let mesh_instance = instances[light_data_index.mesh_instance_index];
+
+    // Uniformly sample a point on the surface of the chosen light.
+    let e0 = rand_f(rng_state);
+    let e1 = rand_f(rng_state);
+    let e2 = rand_f(rng_state);
+    let primitive_index = sample_light_triangle_area_cdf(e0, light_data_index.cdf_offset, mesh_instance.triangle_count);
+    let primitive = primitives[mesh_instance.triangle_offset + primitive_index];
+
+    let pl_obj = sample_triangle_uniformly(e1, e2, primitive.p_first, primitive.p_second, primitive.p_third);
+    let pl = transform_position(mesh_instance.object_world, pl_obj);
+
+    let to_light = pl - p0;
+    var shadow_ray = Ray();
+    shadow_ray.origin = p0 + 0.001 * n0;
+    shadow_ray.dir = normalize(to_light);
+    shadow_ray.record = RayHitRecord(1e30, 0u, 0u, 0.0, 0.0);
+    trace_ray(&shadow_ray);
+
+    if shadow_ray.record.t < length(pl - shadow_ray.origin) - 0.005 {
+        // Light source is occluded; no direct light contribution
+        return vec3f(0.0);
+    }
+    
+    // Calculate triangle normal. Could try to interpolate normals but this should be good enough.
+    let side_a = primitive.p_second - primitive.p_first;
+    let side_b = primitive.p_third - primitive.p_first;
+    var nl = normalize(cross(side_a, side_b));
+    if dot(nl, -shadow_ray.dir) < 0.0 {
+        nl = -nl;
+    }
+
+    var light_pdf: f32;
+    // if light_index == 0u {
+    //     light_pdf = light_emission_strength_cdf[light_index];
+    // } else {
+    //     light_pdf = light_emission_strength_cdf[light_index] - light_emission_strength_cdf[light_index - 1u];
+    // }
+    light_pdf = 1.0 / f32(scene_uniform.light_count);
+    var triangle_pdf = 1.0 / light_mesh_areas[light_index];
+    let pdf = light_pdf * triangle_pdf;
+
+    // Evaluate direct light contribution
+    // https://www.youtube.com/watch?v=FU1dbi827LY at 4:24
+    let cos_theta_receiver = dot(shadow_ray.dir, n0);
+    let cos_theta_emitter = dot(-shadow_ray.dir, nl);
+
+
+
+    //
+    // Calculate GGX brdf
+    // 
+    var f0 = vec3f(0.16 * material.reflectance * material.reflectance);
+    f0 = f0 * (1.0 - material.metallic) + material.base_color.rgb * material.metallic;
+
+    let NdotO = dot(n0, wo);
+    let F0 = fresnel_schlick(NdotO, f0);
+    let F0_max = max(max(F0.r, F0.g), F0.b);
+    
+    // Sample specular
+    let a = material.perceptual_roughness * material.perceptual_roughness;
+    let a2 = a * a;
+    let theta = acos(sqrt((1.0 - e1) / (e1 * (a2 - 1.0) + 1.0)));
+    let phi = e2 * TWO_PI;
+
+    // // Create tangent space basis vectors.
+    // let on = orthonormal_from_normal(n0);
+    // // Microsurface normal or half-vector in world space.
+    // let wm = spherical_to_cartesian_in_on(theta, phi, on);
+    // // Incident direction in world space.
+    // wi = reflect(wo, wm);
+
+    // Incident direction in world space.
+    let wi = to_light;
+    // Microsurface normal or half-vector in world space.
+    let wm = normalize(0.5 * wi + 0.5 * wo);
+
+    let NdotM = dot(n0, wm);
+    let NdotI = dot(n0, wi);
+    let OdotM = dot(wo, wm);
+
+    let F = fresnel_schlick(OdotM, f0);
+    let D = D_GGX(NdotM, material.perceptual_roughness);
+    let G = G_smith(NdotO, NdotI, material.perceptual_roughness);
+    let brdf = (F * D * G) / (4.0 * NdotO * NdotI);
+    
+    let light_material = materials[mesh_instance.material_index];
+    let direct_light = brdf * light_material.emissive.xyz * cos_theta_receiver * cos_theta_emitter / pdf / distance_sq(n0, nl);
+    return max(direct_light, vec3f(0.0));
+}
+
 // Find the index of the largest value <= `e` between in `light_emission_strength_cdf`.
 // Binary search
 fn sample_light_emission_strength_cdf(e: f32) -> u32 {
@@ -716,7 +813,7 @@ struct ImportanceSamplingResult {
     reflectance: vec3f,
 }
 
-fn importance_sample_ggx_d(n: vec3f, wo: vec3f, material: Material, rng_state: ptr<function, u32>, bn_texture_offset: vec2u, pixel_id: vec2u) -> ImportanceSamplingResult {
+fn importance_sample_ggx_d(n: vec3f, wo: vec3f, material: Material, rng_state: ptr<function, u32>) -> ImportanceSamplingResult {
     var f0 = vec3f(0.16 * material.reflectance * material.reflectance);
     f0 = f0 * (1.0 - material.metallic) + material.base_color.rgb * material.metallic;
 
@@ -727,10 +824,6 @@ fn importance_sample_ggx_d(n: vec3f, wo: vec3f, material: Material, rng_state: p
     let e0 = rand_f(rng_state);
     let e1 = rand_f(rng_state);
     let e2 = rand_f(rng_state);
-
-    // let e0 = next_bn_sample(rng_state, bn_texture_offset, pixel_id);
-    // let e1 = next_bn_sample(rng_state, bn_texture_offset, pixel_id);
-    // let e2 = next_bn_sample(rng_state, bn_texture_offset, pixel_id);
 
     var brdf: vec3f;
     var pdf_s: f32;
@@ -768,7 +861,11 @@ fn importance_sample_ggx_d(n: vec3f, wo: vec3f, material: Material, rng_state: p
         pdf_d = PI * NdotI;
     }
 
-    let pdf = ((1.0 - F0_max) * pdf_d) + (F0_max * pdf_s);
+    var pdf = ((1.0 - F0_max) * pdf_d) + (F0_max * pdf_s);
+    // Do this to get rid of division by zero and thus NaN reflectance => black pixels at grazing angles
+    if pdf < 0.0001 {
+        pdf = 1.0;
+    }
     let reflectance = brdf / pdf;
 
     return ImportanceSamplingResult(wi, reflectance);

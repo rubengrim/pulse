@@ -72,7 +72,7 @@ impl Plugin for PulsePathTracerPlugin {
                     core_3d::graph::Node3d::EndMainPass,
                     PulsePathTracerNodeLabel,
                     PulsePathTracerUpscalingNodeLabel,
-                    core_3d::graph::Node3d::Tonemapping,
+                    core_3d::graph::Node3d::Bloom,
                 ),
             );
 
